@@ -40,9 +40,9 @@ def _build(model_id: str, n_classes: int, log):
         m.fc = nn.Linear(m.fc.in_features, n_classes)
         return m, 96
     m = nn.Sequential(
-        nn.Conv2d(3, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
-        nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
-        nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.AdaptiveAvgPool2d(1),
+        nn.Conv2d(3, 16, 3, padding=1), nn.GroupNorm(4, 16), nn.ReLU(), nn.MaxPool2d(2),
+        nn.Conv2d(16, 32, 3, padding=1), nn.GroupNorm(8, 32), nn.ReLU(), nn.MaxPool2d(2),
+        nn.Conv2d(32, 64, 3, padding=1), nn.GroupNorm(8, 64), nn.ReLU(), nn.AdaptiveAvgPool2d(1),
         nn.Flatten(), nn.Dropout(0.2), nn.Linear(64, n_classes))
     return m, 64
 
