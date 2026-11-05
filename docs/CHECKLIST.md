@@ -1,0 +1,23 @@
+# Implementation checklist
+
+- [x] Single Remix-deployable contract: device registry, dataset publish + upload fee, licenses, x402 prepaid intents, request escrow, payouts, refunds, global duplicate-claim guard
+- [x] Wallet auth (EIP-191 nonce) + demo personas, role flags
+- [x] Device registration (hardware key via `/pubkey`, or a labelled dev-software key), on-chain anchoring
+- [x] Live device dashboard: MJPEG proxy, WebSocket telemetry, ultrasonic, IR, RFID detection + tag association, servo control
+- [x] Capture → signed ES256 manifest (sensors + RFID) → encrypted storage
+- [x] Import path (unsigned, labelled as no provenance)
+- [x] Quality & privacy checks (decode, resolution, exposure, sharpness, dHash duplicates, YuNet face detection, optional VLM)
+- [x] Real integrity/signature verification per sample and per dataset (Merkle root + on-chain root)
+- [x] Insurance tamper demo (3 valid / 3 invalid; a one-pixel change causes a hash mismatch)
+- [x] Marketplace search + filters, dataset detail, Proof Card with Verify
+- [x] Buyer requests with spec hash, escrow (on-chain or demo ledger), fulfillment checks, payouts, refunds
+- [x] Training Room: licensed datasets only, base models, config, real PyTorch training, live metrics, before/after, weights + model card export, raw-export denial
+- [x] Dashboard, profile, transactions, audit log
+- [x] ESP32 main-board firmware written (sensors, servo, RFID, on-device P-256 signing)
+- [x] Autonomous x402 agent script
+- [ ] Firmware compiled and validated on the physical rig
+- [ ] Contract deployed on Sepolia (deploy with Remix, then set `.env`)
+- [ ] On-chain flows exercised end to end against the deployed contract
+- [ ] VLM endpoint configured (0G / OpenAI-compatible)
+- [ ] Video clip capture (the current pipeline handles still images)
+- [ ] Postgres run-through (a SQLAlchemy URL is supported but untested)
