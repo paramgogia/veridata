@@ -51,7 +51,8 @@ def upload_bytes(data: bytes, name: str) -> tuple[str, str]:
         tmp = f.name
     try:
         from zg_storage import UploadOption
-        tx, root, _size = _indexer().upload(tmp, tags=b"veridata", option=UploadOption(finality_required=False, fast_mode=True))
+        tx, root, _size = _indexer().upload(tmp, tags=b"veridata",
+                                            option=UploadOption(finality_required="file_finalized", fast_mode=True))
         return tx, root
     finally:
         os.unlink(tmp)

@@ -72,7 +72,7 @@ def get_sample(sid: str, db: Session = Depends(get_db)):
 
 
 @router.get("/zerog/manifest/{root}")
-def zerog_manifest(root: str):
+def zerog_manifest(root: str, db: Session = Depends(get_db)):
     """Resolve a manifest from 0G storage by root hash — lets anyone (the Proof Card,
     a buyer, an auditor) fetch a signed manifest and re-derive hashes independently
     of the platform database. The caller checks sha256(canonical(manifest)) == root;
@@ -80,10 +80,11 @@ def zerog_manifest(root: str):
     from .. import zerog
     if not zerog.enabled():
         raise HTTPException(503, "0G storage not configured")
-    if not (len(root) == 64 and all(c in "0123456789abcdefABCDEF" for c in root)):
-        raise HTTPException(400, "root must be a 64-char hex hash")
+    bare = root[2:] if root.startswith(("0x", "0X")) else root
+    if not (len(bare) == 64 and all(c in "0123456789abcdefABCDEF" for c in bare)):
+        raise HTTPException(400, "root must be a 64-char hex hash (0x prefix optional)")
     try:
-        data = zerog.download_bytes(root)
+        data = zerog.download_bytes(root)  # the SDK downloader expects the 0x-prefixed root
     except Exception as e:
         raise HTTPException(404, f"manifest not resolvable from 0G: {type(e).__name__}")
     try:
@@ -92,8 +93,13 @@ def zerog_manifest(root: str):
         raise HTTPException(422, "resolved bytes are not canonical JSON")
     from .. import crypto
     mh = crypto.sha256_hex(crypto.canonical(manifest))
-    return {"root": root, "resolved_sha256": mh, "matches_root": mh.lower() == root.lower(),
-            "manifest": manifest, "bytes": len(data)}
+    # The 0G root is the storage Merkle root of the file's chunks, not a plain
+    # sha256 — the download is authenticated by the indexer against the root.
+    # Cross-check the resolved bytes against any locally recorded manifest hash.
+    s = db.query(Sample).filter(Sample.storage_root_manifest.in_([root, bare])).first()
+    return {"root": root, "resolved_sha256": mh, "bytes": len(data),
+            "matches_manifest_hash": bool(s and s.manifest_hash == mh), "sample_id": s.id if s else None,
+            "manifest": manifest}
 
 
 class MetaBody(BaseModel):
