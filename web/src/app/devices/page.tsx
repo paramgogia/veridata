@@ -18,7 +18,7 @@ export default function Devices() {
       <PageHeader
         eyebrow="Hardware"
         title="Devices"
-        sub="Registered capture rigs: ESP32-CAM + ultrasonic + IR + RFID + servo. Each device has its own P-256 signing key; user identity and device identity are kept separate."
+        sub="Registered capture rigs: ESP32-CAM + IR + temperature/humidity + RFID. Each device has its own P-256 signing key; user identity and device identity are kept separate."
         right={<Button variant="primary" onClick={() => setOpen(true)} disabled={!me}><Plus className="h-4 w-4" /> Register device</Button>}
       />
       <div className="mb-4"><Tabs value={scope} onChange={setScope} items={[{ id: "mine", label: "My devices" }, { id: "all", label: "Network" }]} /></div>

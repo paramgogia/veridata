@@ -32,7 +32,7 @@ def mk_device(db, owner, dev_id, name, simulated=True):
     k, pub = crypto.gen_p256()
     d = Device(id=dev_id, owner_id=owner.id, name=name, pubkey_hex=pub, signing_mode="dev-software", simulated=simulated,
                privkey_wrapped=crypto.wrap(crypto.priv_to_bytes(k), f"device:{dev_id}"),
-               sensors=["esp32-cam", "hc-sr04 ultrasonic", "ir obstacle", "rc522 rfid", "sg90 servo"],
+               sensors=["esp32-cam", "ir obstacle", "rc522 rfid", "dht temp/humidity"],
                registration_mode="local", created_at=time.time() - 40 * DAY, last_seen=time.time() - 3600)
     db.add(d)
     db.flush()
@@ -130,29 +130,29 @@ def seed(reset: bool = False) -> None:
         db.add(RfidTag(uid=uid, label=label, asset_type=typ, owner_id=retail.id))
 
     leaf = add_samples(db, asha, d_asha, "leaf", ["healthy", "pest_damage", "fungal_spot"], 40, t0, "Alphonso mango leaf, orchard row capture",
-                       ["agriculture", "crop-disease", "pest-damage"], sensors_fn=lambda j, l: {"distance_cm": 18 + j % 7, "ir": False, "servo_deg": 70 + j % 40}, seed0=1)
+                       ["agriculture", "crop-disease", "pest-damage"], sensors_fn=lambda j, l: {"ir": False, "temp_c": 29.0 + (j % 6) * 0.3, "humidity_pct": 71 + j % 9}, seed0=1)
     dmg = add_samples(db, garage, d_garage, "damage", ["dent", "scratch", "cracked_glass"], 32, t0 + 2 * DAY, "Vehicle panel inspection photo",
-                      ["insurance", "vehicle-damage"], sensors_fn=lambda j, l: {"distance_cm": 45 + j % 20, "ir": True, "servo_deg": 90}, seed0=50_000)
+                      ["insurance", "vehicle-damage"], sensors_fn=lambda j, l: {"ir": True, "temp_c": 31.0 + (j % 5) * 0.4, "humidity_pct": 55 + j % 12}, seed0=50_000)
     road = add_samples(db, fleet, d_fleet, "road", ["rain_night", "clear_night"], 36, t0 + 4 * DAY, "Rural two-lane road, dashcam frame",
                        ["autonomous-driving", "night", "weather"], seed0=90_000)
     tags = ["04A1B2C3", "04D4E5F6", "0477AA19"]
     shelf = add_samples(db, retail, d_retail, "shelf", ["shelf_stocked", "shelf_empty"], 36, t0 + 6 * DAY, "Retail shelf bay, aisle 4",
-                        ["retail", "inventory", "rfid-tagged", "ultrasonic"],
+                        ["retail", "inventory", "rfid-tagged"],
                         rfid_fn=lambda j: [{"uid": tags[j % 3], "seen_ms_ago": 400 + j * 7}],
-                        sensors_fn=lambda j, l: {"distance_cm": (22 if l == "shelf_stocked" else 58) + j % 5, "ir": l == "shelf_stocked", "servo_deg": 60 + (j * 15) % 90}, seed0=130_000)
+                        sensors_fn=lambda j, l: {"ir": l == "shelf_stocked", "temp_c": 24.5 + (j % 4) * 0.2, "humidity_pct": 48 + j % 6}, seed0=130_000)
     occ = add_samples(db, retail, d_retail, "ir", ["empty", "occupied_1", "occupied_many"], 30, t0 + 8 * DAY, "Anonymous 8×8 IR occupancy grid, warehouse aisle",
-                      ["warehouse", "occupancy", "ir-sensing"], sensors_fn=lambda j, l: {"distance_cm": 120 - j % 50, "ir": l != "empty", "servo_deg": 90}, seed0=170_000)
+                      ["warehouse", "occupancy", "ir-sensing"], sensors_fn=lambda j, l: {"ir": l != "empty", "temp_c": 30.5 + (j % 7) * 0.3, "humidity_pct": 62 + j % 10}, seed0=170_000)
 
-    ds_leaf = mk_dataset(db, asha, "Alphonso mango leaf condition — Ratnagiri orchards", "Device-signed close-ups of mango leaves labelled healthy, pest damage (chewed lamina) and fungal leaf spot. Captured on ESP32 orchard rigs with ultrasonic distance metadata.", leaf,
-                         ["agriculture", "crop-disease", "pest-damage"], ["mango", "leaf", "pest", "fungal", "orchard"], "Ratnagiri, Maharashtra", eth(0.002), ["camera", "distance_cm", "servo_deg"])
+    ds_leaf = mk_dataset(db, asha, "Alphonso mango leaf condition — Ratnagiri orchards", "Device-signed close-ups of mango leaves labelled healthy, pest damage (chewed lamina) and fungal leaf spot. Captured on ESP32 orchard rigs with temperature and humidity metadata.", leaf,
+                         ["agriculture", "crop-disease", "pest-damage"], ["mango", "leaf", "pest", "fungal", "orchard"], "Ratnagiri, Maharashtra", eth(0.002), ["camera", "temp_c", "humidity_pct"])
     ds_dmg = mk_dataset(db, garage, "Vehicle damage evidence — dents, scratches, cracked glass", "Inspection-bay photos of panel dents, paint scratches and cracked glass. Each frame carries a signed capture manifest for claims-fraud model training.", dmg,
-                        ["insurance", "vehicle-damage"], ["dent", "scratch", "windshield", "claims"], "Kolhapur, Maharashtra", eth(0.003), ["camera", "distance_cm", "ir"])
+                        ["insurance", "vehicle-damage"], ["dent", "scratch", "windshield", "claims"], "Kolhapur, Maharashtra", eth(0.003), ["camera", "ir", "temp_c"])
     ds_road = mk_dataset(db, fleet, "Rural night driving — rain vs clear", "Night dashcam frames on rural two-lane roads, labelled heavy rain vs clear conditions.", road,
                          ["autonomous-driving", "night", "weather"], ["rain", "night", "rural", "dashcam"], "Western Ghats", eth(0.0025), ["camera"])
-    ds_shelf = mk_dataset(db, retail, "Retail shelf stock levels with RFID-tagged SKUs", "Shelf-bay captures labelled stocked vs stock-out, each associated with RFID SKU tags read during capture and ultrasonic depth-to-product readings.", shelf,
-                          ["retail", "inventory", "rfid-tagged", "ultrasonic"], ["shelf", "stock-out", "rfid", "sku"], "Pune, Maharashtra", eth(0.0015), ["camera", "rfid", "distance_cm", "ir"])
+    ds_shelf = mk_dataset(db, retail, "Retail shelf stock levels with RFID-tagged SKUs", "Shelf-bay captures labelled stocked vs stock-out, each associated with RFID SKU tags read during capture, with IR presence readings.", shelf,
+                          ["retail", "inventory", "rfid-tagged"], ["shelf", "stock-out", "rfid", "sku"], "Pune, Maharashtra", eth(0.0015), ["camera", "rfid", "ir"])
     ds_occ = mk_dataset(db, retail, "Anonymous warehouse occupancy — IR grids", "Privacy-preserving 8×8 IR occupancy grids (no imagery of people) labelled empty / one person / crowded.", occ,
-                        ["warehouse", "occupancy", "ir-sensing"], ["occupancy", "infrared", "anonymous"], "Bhiwandi, Maharashtra", eth(0.001), ["ir-grid", "distance_cm"], fmt="IR grid 8×8 → 128×128")
+                        ["warehouse", "occupancy", "ir-sensing"], ["occupancy", "infrared", "anonymous"], "Bhiwandi, Maharashtra", eth(0.001), ["ir-grid", "ir"], fmt="IR grid 8×8 → 128×128")
 
     # Buyer already licenses the occupancy set so the Training Room has data immediately.
     db.add(License(dataset_id=ds_occ.id, buyer_id=north.id, price=ds_occ.price, mode="local", via="direct", created_at=time.time() - 2 * DAY))
@@ -164,7 +164,7 @@ def seed(reset: bool = False) -> None:
     for k, label in enumerate(["dent", "scratch", "cracked_glass"]):
         img = synth.generate("damage", label, 777_000 + k)
         st = quality.image_stats(img)
-        man = provenance.build_manifest(d_garage, img, st["width"], st["height"], {"distance_cm": 50, "ir": True, "servo_deg": 90}, [], {"source": "insurance-demo"})
+        man = provenance.build_manifest(d_garage, img, st["width"], st["height"], {"ir": True, "temp_c": 30.2, "humidity_pct": 60.0}, [], {"source": "insurance-demo"})
         ins.append(provenance.store_sample(db, owner_id=garage.id, media=img, manifest=man, signature=provenance.sign_manifest_dev(d_garage, man), dev=d_garage,
                                            label=label, description=f"Claim photo #{k + 1} — {label}", categories=["insurance"], is_demo=True, blur_preview=False))
     img = synth.generate("damage", "dent", 778_001)  # 4: no manifest at all
@@ -192,9 +192,9 @@ def seed(reset: bool = False) -> None:
     mk_request(db, north, [fleet], "Heavy rain at night — rural driving footage", "Frames from rural two-lane roads at night in heavy rain. Headlights on, wipers visible acceptable. No identifiable people or licence plates.",
                "autonomous-driving", 2000, eth(0.0005), 640, 14, spec(conditions="night, heavy rain, rural road", sensors=["camera"], labels=["rain_night"], location="India, rural"))
     mk_request(db, north, [asha], "500 mango leaves showing visible pest damage", "Close-up images of mango leaves with visible insect feeding damage. One leaf per frame, 10–30 cm distance.",
-               "pest-damage", 500, eth(0.0008), 120, 21, spec(labels=["pest_damage"], required_metadata=["distance_cm", "description"], location="Konkan belt"))
-    mk_request(db, retail, [retail], "Shelf stock-out captures with RFID-tagged SKUs", "Shelf bays photographed at stock-out and restock moments. The SKU's RFID tag must be read during the capture session; ultrasonic depth reading required.",
-               "retail", 1000, eth(0.0004), 85, 10, spec(labels=["shelf_empty", "shelf_stocked"], required_metadata=["rfid", "distance_cm"], sensors=["camera", "rfid", "ultrasonic"]))
+               "pest-damage", 500, eth(0.0008), 120, 21, spec(labels=["pest_damage"], required_metadata=["description"], location="Konkan belt"))
+    mk_request(db, retail, [retail], "Shelf stock-out captures with RFID-tagged SKUs", "Shelf bays photographed at stock-out and restock moments. The SKU's RFID tag must be read during the capture session; IR presence reading required.",
+               "retail", 1000, eth(0.0004), 85, 10, spec(labels=["shelf_empty", "shelf_stocked"], required_metadata=["rfid", "ir"], sensors=["camera", "rfid", "ir"]))
     mk_request(db, insurer, [garage], "Genuine vehicle damage photos for fraud detection", "Device-signed photos of real panel damage. Unsigned or edited images are rejected automatically.",
                "insurance", 300, eth(0.0015), 41, 30, spec(labels=["dent", "scratch", "cracked_glass"], min_quality=60))
     mk_request(db, north, [retail], "Anonymous IR occupancy grids — warehouse aisles", "8×8 thermal occupancy grids only. No camera imagery of people.",

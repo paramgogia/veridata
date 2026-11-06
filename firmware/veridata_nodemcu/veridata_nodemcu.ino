@@ -15,7 +15,7 @@
     ESP32-CAM   -> power only (runs CameraWebServer separately)
 
   HTTP API on port 80 (JSON, CORS *). The Veridata backend polls this:
-    GET /sensors -> {"distance_cm":null,"ir":true,"servo_deg":null,"temp_c":27.4,"humidity_pct":61.0,
+    GET /sensors -> {"ir":true,"temp_c":27.4,"humidity_pct":61.0,
                      "rfid":{"uid":"04A1B2C3","seen_ms_ago":1200}|null,"rfid_reader":"ok",
                      "dht_type":"DHT22","uptime_ms":123456,"rssi":-58,"fw":"veridata-nodemcu-0.1.0","board":"esp8266"}
     GET /         -> plain-text status page (open it in a browser to test)
@@ -30,8 +30,17 @@
 #include <DHT.h>
 
 // ---------- EDIT THESE ----------
-#define WIFI_SSID     "YOUR_WIFI"        // same 2.4 GHz network as the ESP32-CAM and laptop
+// Wi-Fi credentials live in secrets.h next to this file (gitignored). Copy secrets.example.h to
+// secrets.h and fill it in; without it the placeholders below are used.
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+#ifndef WIFI_SSID
+#define WIFI_SSID     "YOUR_WIFI"        // 2.4 GHz, same network as the laptop
+#endif
+#ifndef WIFI_PASSWORD
 #define WIFI_PASSWORD "YOUR_PASSWORD"
+#endif
 // --------------------------------
 #define FW_VERSION "veridata-nodemcu-0.1.0"
 
@@ -119,9 +128,7 @@ void hSensors() {
   if (lastUid.length() && millis() - lastUidAt < 8000)
     rf = "{\"uid\":\"" + lastUid + "\",\"seen_ms_ago\":" + String(millis() - lastUidAt) + "}";
   String b = "{";
-  b += "\"distance_cm\":null,";                       // no ultrasonic wired yet
   b += "\"ir\":" + String(irObject() ? "true" : "false") + ",";
-  b += "\"servo_deg\":null,";                         // no servo on this rig
   b += "\"temp_c\":" + num(tempC, 1) + ",";
   b += "\"humidity_pct\":" + num(humidity, 1) + ",";
   b += "\"rfid\":" + rf + ",";
@@ -165,10 +172,39 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);           // faster HTTP responses
+  WiFi.disconnect();
+  delay(100);
+
+  // Show which networks the board can see, so a missing or 5 GHz hotspot is obvious.
+  Serial.println("Scanning Wi-Fi...");
+  int n = WiFi.scanNetworks();
+  bool seen = false;
+  for (int i = 0; i < n; i++) {
+    Serial.printf("  %-24s ch %2d  %d dBm\n", WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
+    if (WiFi.SSID(i) == WIFI_SSID) seen = true;
+  }
+  Serial.println(seen ? "Target network FOUND: " WIFI_SSID
+                      : "Target network NOT visible: " WIFI_SSID " (check the name; hotspot must be 2.4 GHz / Maximize Compatibility)");
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("WiFi connecting");
-  while (WiFi.status() != WL_CONNECTED) { delay(400); Serial.print("."); }
-  Serial.print("\nIP: "); Serial.println(WiFi.localIP());
+  Serial.println("WiFi connecting to " WIFI_SSID);
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(2000);
+    wl_status_t st = WiFi.status();
+    const char* why = st == WL_NO_SSID_AVAIL ? "network not found" :
+                      st == WL_WRONG_PASSWORD ? "WRONG PASSWORD" :
+                      st == WL_CONNECT_FAILED ? "connect failed" :
+                      st == WL_IDLE_STATUS ? "idle" :
+                      st == WL_DISCONNECTED ? "still trying" : "other";
+    Serial.printf("  ...not connected yet (status %d: %s, %lus)\n", (int)st, why, (millis() - t0) / 1000);
+    if (millis() - t0 > 30000) {                 // start over every 30 s
+      WiFi.disconnect(); delay(200);
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      t0 = millis();
+    }
+  }
+  Serial.print("IP: "); Serial.println(WiFi.localIP());
   Serial.println("Open http://" + WiFi.localIP().toString() + "/sensors");
 
   server.on("/", hRoot);

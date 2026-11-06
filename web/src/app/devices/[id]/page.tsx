@@ -108,12 +108,12 @@ export default function DeviceDashboard() {
             {dev.signing_mode === "dev-software" && (
               <Note tone="warn">Development mode: manifests are signed by a platform-held software key for this device. Flash <span className="font-mono">firmware/veridata_main</span> to sign on the ESP32 itself.</Note>
             )}
-            {!dev.simulated && (
+            {!dev.simulated && (mine ? <UrlEditor dev={dev} onSaved={reload} /> : (
               <div className="space-y-1 text-[11px] text-faint">
                 <div className="flex items-center gap-1"><ExternalLink className="h-3 w-3" /> cam: <span className="font-mono">{dev.capture_url || "—"}</span></div>
                 <div className="flex items-center gap-1"><ExternalLink className="h-3 w-3" /> board: <span className="font-mono">{dev.control_url || "—"}</span></div>
               </div>
-            )}
+            ))}
           </div>
         </Card>
       </div>
@@ -127,5 +127,43 @@ function ReadOnlyLive({ dev }: { dev: any }) {
     <Card className="p-4 text-sm text-muted">
       Status: {t ? (t.online ? "online" : "offline") : "…"} · Only the device owner can view the live stream and control capture.
     </Card>
+  );
+}
+
+function UrlEditor({ dev, onSaved }: { dev: any; onSaved: () => void }) {
+  const [cam, setCam] = useState<string>(dev.capture_url || "");
+  const [board, setBoard] = useState<string>(dev.control_url || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    setOk(false);
+    try {
+      const capture = cam.trim();
+      const host = capture.replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
+      await api(`/api/devices/${dev.id}`, { method: "PATCH", json: { capture_url: capture, stream_url: host ? `http://${host}:81/stream` : "", control_url: board.trim() } });
+      setOk(true);
+      onSaved();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 border-t border-line pt-3">
+      <div className="label">Connection (IPs change on hotspots)</div>
+      <label className="block text-[11px] text-muted">Camera /capture URL
+        <input className="input mt-1 h-8 font-mono text-xs" value={cam} onChange={(e) => setCam(e.target.value)} placeholder="http://172.20.10.9/capture" />
+      </label>
+      <label className="block text-[11px] text-muted">Sensor board URL
+        <input className="input mt-1 h-8 font-mono text-xs" value={board} onChange={(e) => setBoard(e.target.value)} placeholder="http://172.20.10.12" />
+      </label>
+      <Button size="sm" onClick={save} loading={busy}>Save URLs</Button>
+      {ok && <span className="ml-2 text-[11px] text-ok">saved</span>}
+      <ErrorNote>{err}</ErrorNote>
+    </div>
   );
 }

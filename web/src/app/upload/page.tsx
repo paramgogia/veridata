@@ -12,7 +12,7 @@ import { sendVeridata, txErr } from "@/lib/chain";
 import { eth, toGwei, toWei } from "@/lib/format";
 import { useSession } from "@/lib/session";
 
-const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "ultrasonic", "rfid-tagged", "industrial", "infrastructure"];
+const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "rfid-tagged", "industrial", "infrastructure"];
 const STEPS = ["Source", "Capture", "Describe", "Verify", "Publish"];
 
 export default function UploadPage() {

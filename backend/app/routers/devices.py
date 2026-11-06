@@ -1,4 +1,4 @@
-"""Device registry, live telemetry (WebSocket), MJPEG stream proxy, servo, RFID and capture."""
+"""Device registry, live telemetry (WebSocket), live preview frames, MJPEG proxy, RFID and capture."""
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +7,7 @@ import time
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,7 @@ from ..serialize import device_view, sample_view
 
 router = APIRouter(prefix="/api")
 
-SENSORS = ["esp32-cam", "hc-sr04 ultrasonic", "ir obstacle", "rc522 rfid", "sg90 servo", "dht temp/humidity"]
+SENSORS = ["esp32-cam", "ir obstacle", "rc522 rfid", "dht temp/humidity"]
 
 
 def chain_device_id(dev_id: str) -> str:
@@ -92,6 +92,31 @@ def _own(db: Session, dev_id: str, user: User) -> Device:
     return dev
 
 
+class DeviceUrls(BaseModel):
+    capture_url: str | None = None
+    stream_url: str | None = None
+    control_url: str | None = None
+
+
+@router.patch("/devices/{dev_id}")
+def update_device_urls(dev_id: str, body: DeviceUrls, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    """Hotspot/DHCP IPs change: let the owner repoint the CAM and sensor board (signing key unchanged)."""
+    dev = _own(db, dev_id, user)
+    if dev.simulated:
+        raise HTTPException(400, "simulated devices have no URLs")
+    for k in ("capture_url", "stream_url", "control_url"):
+        v = getattr(body, k)
+        if v is not None:
+            v = v.strip().rstrip("/") if k == "control_url" else v.strip()
+            if v and not v.startswith(("http://", "https://")):
+                raise HTTPException(400, f"{k} must start with http://")
+            setattr(dev, k, v)
+    hardware._frames.pop(dev.id, None)
+    audit(db, user.address, "device.update_urls", dev.id, body.model_dump(exclude_none=True))
+    db.commit()
+    return device_view(dev)
+
+
 class TxBody(BaseModel):
     tx_hash: str
 
@@ -161,6 +186,21 @@ async def telemetry_ws(ws: WebSocket, dev_id: str):
         db.close()
 
 
+@router.get("/devices/{dev_id}/frame")
+async def frame(dev_id: str, db: Session = Depends(get_db)):
+    """One JPEG for the live preview (polled by the dashboard; see hardware.latest_frame)."""
+    dev = db.get(Device, dev_id)
+    if not dev:
+        raise HTTPException(404, "device not found")
+    if not dev.simulated and not dev.capture_url:
+        raise HTTPException(404, "no camera configured")
+    try:
+        jpg = await hardware.latest_frame(dev)
+    except Exception as e:
+        raise HTTPException(502, f"camera unreachable: {type(e).__name__}")
+    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 @router.get("/devices/{dev_id}/stream")
 async def stream(dev_id: str, db: Session = Depends(get_db)):
     dev = db.get(Device, dev_id)
@@ -186,19 +226,6 @@ async def stream(dev_id: str, db: Session = Depends(get_db)):
             await client.aclose()
 
     return StreamingResponse(body(), media_type=upstream.headers.get("content-type", "multipart/x-mixed-replace"))
-
-
-class ServoBody(BaseModel):
-    deg: int
-
-
-@router.post("/devices/{dev_id}/servo")
-async def servo(dev_id: str, body: ServoBody, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
-    dev = _own(db, dev_id, user)
-    try:
-        return await hardware.set_servo(dev, body.deg)
-    except Exception as e:
-        raise HTTPException(502, f"servo command failed: {type(e).__name__}")
 
 
 class CaptureBody(BaseModel):
@@ -227,7 +254,9 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
         tag = db.get(RfidTag, uid)
         rfid.append({"uid": uid, "label": tag.label if tag else None,
                      "seen_ms_ago": (tel.get("rfid") or {}).get("seen_ms_ago") if (tel.get("rfid") or {}).get("uid") == uid else None})
-    sensors = {k: tel.get(k) for k in ("distance_cm", "ir", "servo_deg", "temp_c", "humidity_pct") if tel.get(k) is not None}
+    sensors = {k: tel.get(k) for k in ("ir", "temp_c", "humidity_pct") if tel.get(k) is not None}
+    if not dev.simulated and not tel.get("online"):
+        raise HTTPException(502, "sensor board offline: refusing to sign a capture without real sensor readings")
     meta = {"fw": tel.get("fw"), "simulated": dev.simulated, "source": "device-capture"}
     manifest = provenance.build_manifest(dev, jpeg, st["width"], st["height"], sensors, rfid, meta)
     if dev.signing_mode == "device-hardware":

@@ -3,8 +3,7 @@
 Real hardware (two boards, one logical device):
   - ESP32-CAM running the stock CameraWebServer: still at  <cam>/capture, MJPEG at <cam>:81/stream
   - Main ESP32 running firmware/veridata_main: HTTP JSON API
-        GET  /sensors          -> {distance_cm, ir, servo_deg, rfid:{uid, seen_ms_ago}|null, uptime_ms, fw}
-        GET  /servo?deg=N      -> moves the camera servo
+        GET  /sensors          -> {ir, temp_c, humidity_pct, rfid:{uid, seen_ms_ago}|null, uptime_ms, fw}
         GET  /pubkey           -> {"pubkey": "04..."}  (P-256 key generated on-device, kept in NVS)
         GET  /sign?digest=HEX  -> {"sig": "r||s hex"}  (ES256 over the 32-byte manifest digest)
 If a board is unreachable the dashboard shows it as offline; a device flagged `simulated`
@@ -25,7 +24,7 @@ from .db import Device
 
 class SimState:
     def __init__(self) -> None:
-        self.servo = 90.0
+        self.servo = 90.0  # only used to pan the synthetic frame
         self.tag: str | None = None
         self.tag_at = 0.0
         self.tags = ["04A1B2C3", "04D4E5F6", "0477AA19", "04C0FFEE"]
@@ -41,13 +40,14 @@ def _state(dev_id: str) -> SimState:
 def sim_telemetry(dev: Device) -> dict[str, Any]:
     s = _state(dev.id)
     t = time.time()
-    dist = 60 + 45 * math.sin(t / 4) + random.uniform(-2, 2)
-    ir = dist < 40
+    ir = math.sin(t / 4) > 0.35
+    temp = round(27.5 + 1.2 * math.sin(t / 60) + random.uniform(-0.1, 0.1), 1)
+    hum = round(58 + 6 * math.sin(t / 45) + random.uniform(-0.5, 0.5), 1)
     if random.random() < 0.04:
         s.tag, s.tag_at = random.choice(s.tags), t
     rfid = {"uid": s.tag, "seen_ms_ago": int((t - s.tag_at) * 1000)} if s.tag and t - s.tag_at < 8 else None
-    return {"online": True, "simulated": True, "distance_cm": round(dist, 1), "ir": ir, "servo_deg": s.servo,
-            "rfid": rfid, "uptime_ms": int(t * 1000) % 10**9, "fw": "sim-0.1", "cam_online": True, "ts": t}
+    return {"online": True, "simulated": True, "ir": ir, "temp_c": temp, "humidity_pct": hum,
+            "rfid": rfid, "uptime_ms": int(t * 1000) % 10**9, "fw": "sim-0.2", "cam_online": True, "ts": t}
 
 
 async def telemetry(dev: Device) -> dict[str, Any]:
@@ -71,26 +71,49 @@ async def telemetry(dev: Device) -> dict[str, Any]:
     return out
 
 
-async def set_servo(dev: Device, deg: int) -> dict[str, Any]:
-    deg = max(0, min(180, int(deg)))
-    if dev.simulated:
-        _state(dev.id).servo = float(deg)
-        return {"ok": True, "servo_deg": deg, "simulated": True}
-    async with httpx.AsyncClient(timeout=2.5) as c:
-        r = await c.get(f"{dev.control_url}/servo", params={"deg": deg})
-        r.raise_for_status()
-        return {"ok": True, "servo_deg": deg, **(r.json() if r.headers.get("content-type", "").startswith("application/json") else {})}
+def _sim_jpeg(dev: Device) -> bytes:
+    tel = sim_telemetry(dev)
+    return synth.sim_frame(time.time(), _state(dev.id).servo, 60.0, tel["ir"], (tel["rfid"] or {}).get("uid"))
 
 
 async def capture_jpeg(dev: Device) -> bytes:
+    """A fresh still for a signed capture (never served from the preview cache)."""
     if dev.simulated:
-        tel = sim_telemetry(dev)
-        return synth.sim_frame(time.time(), tel["servo_deg"], tel["distance_cm"], tel["ir"], (tel["rfid"] or {}).get("uid"))
-    async with httpx.AsyncClient(timeout=8) as c:
+        return _sim_jpeg(dev)
+    async with httpx.AsyncClient(timeout=10) as c:
         r = await c.get(dev.capture_url)
         r.raise_for_status()
         if not r.content.startswith(b"\xff\xd8"):
             raise RuntimeError("camera did not return a JPEG")
+        _frames[dev.id] = (time.time(), r.content)
+        return r.content
+
+
+# Live preview: viewers poll single frames instead of holding the CAM's one MJPEG socket.
+# Concurrent viewers share one upstream fetch per device (cached ~0.25 s), and a stalled CAM
+# simply fails one request; the next poll retries, so the preview never freezes for good.
+_frames: dict[str, tuple[float, bytes]] = {}
+_frame_locks: dict[str, Any] = {}
+
+
+async def latest_frame(dev: Device, max_age: float = 0.25) -> bytes:
+    import asyncio
+    if dev.simulated:
+        return _sim_jpeg(dev)
+    hit = _frames.get(dev.id)
+    if hit and time.time() - hit[0] < max_age:
+        return hit[1]
+    lock = _frame_locks.setdefault(dev.id, asyncio.Lock())
+    async with lock:
+        hit = _frames.get(dev.id)
+        if hit and time.time() - hit[0] < max_age:
+            return hit[1]
+        async with httpx.AsyncClient(timeout=httpx.Timeout(6, connect=3)) as c:
+            r = await c.get(dev.capture_url)
+            r.raise_for_status()
+            if not r.content.startswith(b"\xff\xd8"):
+                raise RuntimeError("camera did not return a JPEG")
+        _frames[dev.id] = (time.time(), r.content)
         return r.content
 
 
@@ -116,8 +139,7 @@ async def mjpeg_frames(dev: Device):
     boundary = b"--frame\r\n"
     if dev.simulated:
         while True:
-            tel = sim_telemetry(dev)
-            jpg = synth.sim_frame(time.time(), tel["servo_deg"], tel["distance_cm"], tel["ir"], (tel["rfid"] or {}).get("uid"))
+            jpg = _sim_jpeg(dev)
             yield boundary + b"Content-Type: image/jpeg\r\nContent-Length: " + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n"
             await asyncio.sleep(0.2)
     async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=None)) as c:

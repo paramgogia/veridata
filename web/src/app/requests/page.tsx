@@ -114,8 +114,8 @@ function NewRequest({ open, onClose }: { open: boolean; onClose: () => void }) {
         <Field label="Capture conditions"><input className="input" value={f.conditions} onChange={(e) => set("conditions", e.target.value)} placeholder="daylight, 10–30 cm" /></Field>
         <Field label="Deadline (days)"><input className="input" type="number" min={1} value={f.days} onChange={(e) => set("days", +e.target.value)} /></Field>
         <Field label="Min quality score"><input className="input" type="number" min={0} max={100} value={f.min_quality} onChange={(e) => set("min_quality", +e.target.value)} /></Field>
-        <Field label="Sensor requirements"><Chips options={["camera", "ultrasonic", "ir", "rfid", "servo"]} value={sensors} onChange={setSensors} /></Field>
-        <Field label="Required metadata"><Chips options={["description", "distance_cm", "ir", "rfid"]} value={meta} onChange={setMeta} /></Field>
+        <Field label="Sensor requirements"><Chips options={["camera", "ir", "rfid", "temp_humidity"]} value={sensors} onChange={setSensors} /></Field>
+        <Field label="Required metadata"><Chips options={["description", "ir", "rfid", "temp_c", "humidity_pct"]} value={meta} onChange={setMeta} /></Field>
         <label className="flex items-center gap-2 text-xs text-muted md:col-span-2"><input type="checkbox" checked={f.require_device_signature} onChange={(e) => set("require_device_signature", e.target.checked)} /> Require a valid registered-device signature (recommended)</label>
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">

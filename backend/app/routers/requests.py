@@ -167,7 +167,7 @@ def _check(db: Session, r: DataRequest, s: Sample, user: User) -> list[str]:
     for f in spec.get("required_metadata", []):
         if f == "rfid" and not s.rfid:
             reasons.append("RFID tag association required")
-        elif f in ("distance_cm", "ir", "temp_c", "humidity_pct") and f not in (s.sensors or {}):
+        elif f in ("ir", "temp_c", "humidity_pct") and f not in (s.sensors or {}):
             reasons.append(f"sensor reading '{f}' required")
         elif f == "description" and not s.description:
             reasons.append("description required")
