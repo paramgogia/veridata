@@ -82,3 +82,8 @@ EXPLORER_URL = env("EXPLORER_URL", "https://sepolia.etherscan.io")
 GWEI = 10**9
 UPLOAD_FEE = int(env("UPLOAD_FEE_GWEI", "100000"))  # 0.0001 ETH, must match the contract
 PLATFORM_FEE_BPS = int(env("PLATFORM_FEE_BPS", "500"))
+
+# ---- Arkiv (Rabdi testnet — decentralised DB-chain for marketplace data) ----
+ARKIV_ACCESS_KEY = env("ARKIV_ACCESS_KEY")
+ARKIV_PRIVATE_KEY = env("ARKIV_PRIVATE_KEY")  # same wallet or a dedicated one
+ARKIV_RPC_URL = env("ARKIV_RPC_URL", "https://rpc.rabdi.db-chain.testnet.arkiv.network")

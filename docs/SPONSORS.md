@@ -10,7 +10,7 @@ Source: https://ethglobal.com/events/mumbai/prizes (fetched during development).
 | Whitechain | OP-stack L2, USDT | Stablecoin settlement (Operate / Scale tracks) | Low–Med | Medium | **Not implemented**: the team chose Ethereum Sepolia + Remix. Porting = redeploy with USDT transfers instead of ETH |
 | Hedera | x402 on Hedera, HCS | x402 settlement + HCS audit log | Medium | Medium | Not implemented |
 | World ID | Proof of personhood | Sybil-resistant contributor onboarding | Medium | Medium | Not implemented |
-| Arkiv / Swarm | DB-chain, storage | Queryable dataset metadata, decentralized storage | Medium | Low | Not implemented |
+| **Arkiv** | DB-chain | Decentralized relational database for marketplace discovery, SQL filtering, and native TTL expiration | Medium | High | **Implemented**: 7 schemas on Rabdi testnet, frontend queries via `@arkiv-network/sdk`, see `/arkiv` docs |
 | ENS | Naming | Human-readable contributor and device names | Low | Low | Not implemented |
 | Chainlink CRE | Workflows | Oracle-style verification workflow | Medium | Low | Not implemented |
 | Arc | Circle L1 | Stablecoin escrow | Medium | Low | Not implemented |

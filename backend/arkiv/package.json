@@ -1,0 +1,9 @@
+{
+  "name": "veridata-arkiv",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@arkiv-network/sdk": "latest",
+    "viem": "^2.21.0"
+  }
+}

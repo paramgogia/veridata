@@ -1,19 +1,36 @@
 "use client";
 import { ArrowRight, BadgeCheck, Coins, Cpu, Database, Flame, Lock, Plus, Radar } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DatasetCard, DemandCard, TxLink } from "@/components/domain";
 import { Badge, Button, Card, CardHeader, Empty, ModeBadge, Skeleton, Stat, Tabs, useApi } from "@/components/ui";
 import { ago, eth, num } from "@/lib/format";
+import { queryRequests, arkivEnabled } from "@/lib/arkiv";
 
 export default function DemandBoard() {
   const [sort, setSort] = useState<"value" | "deadline" | "recent" | "progress">("value");
+  const [arkivData, setArkivData] = useState<any[] | null>(null);
+  const [usingArkiv, setUsingArkiv] = useState(false);
   const stats = useApi("/api/stats");
   const reqs = useApi<any[]>(`/api/requests?sort=${sort}`, [sort]);
   const fulfilled = useApi<any[]>("/api/requests/recent-fulfilled");
   const datasets = useApi<any[]>("/api/datasets?sort=quality&limit=4");
+
+  useEffect(() => {
+    if (arkivEnabled()) {
+      queryRequests({ status: "open" })
+        .then((entities) => {
+          if (entities && entities.length > 0) {
+            setArkivData(entities);
+            setUsingArkiv(true);
+          }
+        })
+        .catch(() => { });
+    }
+  }, []);
+
   const s = stats.data;
-  const list = reqs.data || [];
+  const list = arkivData && arkivData.length > 0 ? arkivData : (reqs.data || []);
   const top = [...list].sort((a, b) => b.remaining_escrow - a.remaining_escrow)[0];
 
   return (
@@ -22,6 +39,11 @@ export default function DemandBoard() {
         <div className="max-w-2xl">
           <div className="label mb-2 flex items-center gap-1.5">
             <Radar className="h-3.5 w-3.5" /> Demand Board
+            {usingArkiv ? (
+              <Badge tone="accent" dot>Decentralized DB: Arkiv Rabdi</Badge>
+            ) : (
+              <Badge tone="neutral">Arkiv-enabled</Badge>
+            )}
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight">What AI teams need captured right now</h1>
           <p className="mt-2 text-sm text-muted">

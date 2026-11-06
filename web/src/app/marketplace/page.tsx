@@ -37,7 +37,7 @@ export default function Marketplace() {
 
   return (
     <div>
-      <PageHeader eyebrow="Marketplace" title="Verified datasets" sub="Every dataset is a Merkle root of device-signed capture manifests. Licenses grant in-platform training access; raw data is never downloadable." />
+      <PageHeader eyebrow="Marketplace · Arkiv-indexed" title="Verified datasets" sub="Every dataset is a Merkle root of device-signed capture manifests. Indexed on Arkiv DB-chain and resolvable with SQL-like filters; raw data is never downloadable." />
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
         <aside className="space-y-4">
           <div className="relative">
