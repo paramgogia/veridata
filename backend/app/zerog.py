@@ -100,11 +100,22 @@ def wallet_balance_0g(network: str = "testnet") -> int:
     return w3.eth.get_balance(acct.address)
 
 
+TESTNET_RPC_FALLBACKS = [config.ZEROG_RPC_URL, "https://0g-galileo.drpc.org"]
+
+
 def broker(network: str = "testnet"):
-    """0G compute broker for the given network (contract addresses are built into the SDK)."""
+    """0G compute broker for the given network (contract addresses are built into the SDK).
+
+    The public Galileo RPC drops connections intermittently — try the fallbacks in order."""
     import zerog_py_sdk as z
-    rpc = config.ZEROG_RPC_URL if network == "testnet" else z.get_rpc_url("mainnet")
-    return z.create_broker(config.WALLET_PRIVATE_KEY, network=network, rpc_url=rpc)
+    rpcs = TESTNET_RPC_FALLBACKS if network == "testnet" else [z.get_rpc_url("mainnet")]
+    last: Exception | None = None
+    for rpc in rpcs:
+        try:
+            return z.create_broker(config.WALLET_PRIVATE_KEY, network=network, rpc_url=rpc)
+        except Exception as e:
+            last = e
+    raise last or RuntimeError("no 0G RPC reachable")
 
 
 def ft_status() -> dict[str, Any]:
@@ -147,6 +158,27 @@ def ft_status() -> dict[str, Any]:
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {str(e)[:160]}"
     return out
+
+
+def fund_provider(provider_address: str, service_type: str, amount_wei: int, network: str = "testnet") -> str:
+    """Create/fund a provider sub-account in the compute ledger.
+
+    Sends transferFund with 2M gas — the SDK's 300k default is too low for the
+    account-creation path (needs ~1.6M). Resolves the ledger's on-chain service
+    name (e.g. \"fine-tuning-v1.1\") so the transfer doesn't revert ServiceNotFound."""
+    from web3 import Web3
+    b = broker(network)
+    name = b.ledger._resolve_service_name(service_type, "fund_provider")
+    w3 = b.ledger.web3
+    c = b.ledger.contract
+    acct = b.ledger.account
+    tx = c.functions.transferFund(Web3.to_checksum_address(provider_address), name, int(amount_wei)).build_transaction(
+        {"from": acct.address, "nonce": w3.eth.get_transaction_count(acct.address), "gas": 2000000})
+    h = w3.eth.send_raw_transaction(acct.sign_transaction(tx).raw_transaction)
+    rcpt = w3.eth.wait_for_transaction_receipt(h, timeout=300)
+    if rcpt.status != 1:
+        raise RuntimeError("transferFund reverted")
+    return "0x" + h.hex().removeprefix("0x")
 
 
 def compute_status() -> dict[str, Any]:
