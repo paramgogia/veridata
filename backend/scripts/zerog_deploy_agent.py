@@ -60,6 +60,15 @@ def main() -> None:
     provider = a.provider or (svcs[0].provider if svcs else "")
     if not provider:
         raise SystemExit("no fine-tuning provider registered")
+    # The serving side needs its own funded sub-account (>= 1 0G).
+    try:
+        acc = b.inference.get_account(provider)
+        funded = int(getattr(getattr(acc, "account", acc) or acc, "balance", 0)) > 0
+    except Exception:
+        funded = False
+    if not funded:
+        print("funding inference sub-account (1 0G)…")
+        zerog.fund_provider(provider, "inference", int(1e18), a.network)
     print(f"deploying task {a.task_id} on {BASE_MODEL} via provider {provider}…")
     res = inf.deploy_adapter(provider, BASE_MODEL, a.task_id, wait=True, timeout_seconds=600)
     name = res.adapter_name

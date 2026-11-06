@@ -47,7 +47,7 @@ def export_jsonl(dataset_id: int) -> Path:
     return out
 
 
-def require_funding(broker, network: str) -> None:
+def require_funding(broker, network: str, provider: str) -> None:
     bal = zerog.wallet_balance_0g(network)
     if bal < zerog.MIN_COMPUTE_LEDGER_0G * 10**18:
         raise SystemExit(f"wallet holds {bal / 1e18:.2f} 0G on {network}; the compute ledger needs >= {zerog.MIN_COMPUTE_LEDGER_0G} 0G")
@@ -60,6 +60,17 @@ def require_funding(broker, network: str) -> None:
         broker.ledger.add_ledger(str(zerog.MIN_COMPUTE_LEDGER_0G))
         detail = broker.ledger.get_ledger_with_detail()
     print(f"ledger total {int(detail.total_balance) / 1e18:.2f} 0G")
+    # Fund the provider's fine-tuning sub-account (1 0G; the provider requires
+    # >= 1 0G and the account must exist before create_task).
+    try:
+        acc = broker.fine_tuning.get_account(provider)
+        bal_prov = int(getattr(getattr(acc, "account", acc) or acc, "balance", 0))
+    except Exception:
+        bal_prov = 0
+    if bal_prov == 0:
+        print("funding provider sub-account (1 0G)…")
+        zerog.fund_provider(provider, "fine-tuning", int(1e18), network)
+        print("provider funded")
 
 
 def main() -> None:
@@ -72,14 +83,14 @@ def main() -> None:
     a = ap.parse_args()
 
     broker = zerog.broker(a.network)
-    require_funding(broker, a.network)
 
     ft = broker.fine_tuning
     svcs = ft.list_service()
     if not svcs:
-        raise SystemExit("no fine-tuning providers registered on 0G testnet")
+        raise SystemExit(f"no fine-tuning providers registered on 0G {a.network}")
     provider = a.provider or svcs[0].provider
     print(f"fine-tuning provider: {provider}")
+    require_funding(broker, a.network, provider)
 
     data = export_jsonl(a.dataset_id)
 
@@ -104,7 +115,7 @@ def main() -> None:
     while True:
         st = ft.get_task(provider, task_id)
         print(f"  progress: {getattr(st, 'progress', None) or 'queued'} · deliver_index: {getattr(st, 'deliver_index', None) or '-'}")
-        if getattr(st, "deliver_index", None):
+        if getattr(st, "deliver_index", None) or getattr(st, "progress", "") == "Delivered":
             break
         time.sleep(POLL_SECONDS)
 
