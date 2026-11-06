@@ -1,5 +1,5 @@
 "use client";
-import { Camera, Droplets, Nfc, Radio, ScanLine, Tag, Thermometer, Wifi, WifiOff, X } from "lucide-react";
+import { Camera, Droplets, Laptop, Nfc, Radio, ScanLine, Tag, Thermometer, Video, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, url, WS_BASE } from "@/lib/api";
 import { Badge, Button, cx, ErrorNote } from "./ui";
@@ -48,7 +48,7 @@ export function useTelemetry(devId: string | null) {
 
 /** Live preview by polling single frames through the backend. Unlike one long MJPEG request, a
  *  dropped frame or a CAM reboot only fails one poll; the next one retries, so it never freezes. */
-export function LiveStream({ devId, simulated, className }: { devId: string; simulated?: boolean; className?: string }) {
+export function LiveStream({ devId, simulated, className, onDown }: { devId: string; simulated?: boolean; className?: string; onDown?: (down: boolean) => void }) {
   const [src, setSrc] = useState<string | null>(null);
   const [fails, setFails] = useState(0);
   const [fps, setFps] = useState(0);
@@ -77,7 +77,7 @@ export function LiveStream({ devId, simulated, className }: { devId: string; sim
           frames++;
           const now = performance.now();
           if (now - t0 > 2000) { setFps(Math.round((frames * 10000) / (now - t0)) / 10); frames = 0; t0 = now; }
-          const wait = Math.max(0, 200 - (now - started));   // cap ~5 fps; the CAM sets the real pace
+          const wait = Math.max(0, 500 - (now - started));   // cap ~2 fps: software-JPEG CAMs (GC2145) brown out when pushed harder
           if (wait) await new Promise((r) => setTimeout(r, wait));
         } catch {
           setFails((f) => f + 1);
@@ -90,6 +90,7 @@ export function LiveStream({ devId, simulated, className }: { devId: string; sim
     return () => { stop = true; };
   }, [devId]);
   const down = fails >= 3;
+  useEffect(() => { onDown?.(down); }, [down]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className={cx("relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-black", className)}>
       {src ? (
@@ -104,6 +105,57 @@ export function LiveStream({ devId, simulated, className }: { devId: string; sim
         </Badge>
         {!down && fps > 0 && <Badge>{fps} fps</Badge>}
         {simulated && <Badge tone="warn">SIMULATED</Badge>}
+      </div>
+    </div>
+  );
+}
+
+/** Fallback camera: the laptop/phone camera via getUserMedia (needs localhost or HTTPS). */
+export type BrowserCamHandle = { grab: () => Promise<string | null> };
+
+export function BrowserCamera({ camRef, className }: { camRef: { current: BrowserCamHandle | null }; className?: string }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let stop = false;
+    (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't access a camera here (use localhost or HTTPS).");
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+        if (stop) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (video.current) { video.current.srcObject = stream; await video.current.play().catch(() => {}); }
+        setReady(true);
+      } catch (e: any) {
+        setErr(e?.name === "NotAllowedError" ? "Camera permission denied: allow camera access in the browser." : e?.message || String(e));
+      }
+    })();
+    camRef.current = {
+      grab: async () => {
+        const v = video.current;
+        if (!v || !v.videoWidth) return null;
+        const c = document.createElement("canvas");
+        c.width = v.videoWidth;
+        c.height = v.videoHeight;
+        c.getContext("2d")!.drawImage(v, 0, 0);
+        return c.toDataURL("image/jpeg", 0.9);
+      },
+    };
+    return () => {
+      stop = true;
+      camRef.current = null;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, [camRef]);
+  return (
+    <div className={cx("relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-black", className)}>
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video ref={video} playsInline muted className="h-full w-full object-contain" />
+      {!ready && <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs text-muted">{err || "Starting this device's camera…"}</div>}
+      <div className="absolute left-2 top-2 flex gap-1">
+        <Badge tone={ready ? "ok" : "bad"} dot>{ready ? "THIS DEVICE" : "no camera"}</Badge>
+        <Badge tone="warn">not the rig camera</Badge>
       </div>
     </div>
   );
@@ -186,16 +238,22 @@ export function RfidPanel({ t, marked, onClear, onAssociated }: { t: Telemetry |
   );
 }
 
-export function CaptureButton({ devId, onCaptured, extra, marked, disabled }: { devId: string; onCaptured: (s: any) => void; extra?: Record<string, unknown>; marked?: MarkedTag; disabled?: boolean }) {
+export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getImage, browser }: { devId: string; onCaptured: (s: any) => void; extra?: Record<string, unknown>; marked?: MarkedTag; disabled?: boolean; getImage?: () => Promise<string | null>; browser?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const go = async () => {
     setBusy(true);
     setErr(null);
     try {
+      let image_b64: string | undefined;
+      if (browser) {
+        const img = await getImage?.();
+        if (!img) throw new Error("This device's camera isn't ready yet.");
+        image_b64 = img;
+      }
       onCaptured(await api(`/api/devices/${devId}/capture`, {
         method: "POST",
-        json: { attach_rfid: true, rfid_uids: marked ? [marked.uid] : [], ...extra },
+        json: { attach_rfid: true, rfid_uids: marked ? [marked.uid] : [], ...extra, ...(image_b64 ? { image_b64 } : {}) },
       }));
     } catch (e: any) {
       setErr(e.message);
@@ -206,9 +264,11 @@ export function CaptureButton({ devId, onCaptured, extra, marked, disabled }: { 
   return (
     <div className="space-y-2">
       <Button variant="primary" className="w-full" onClick={go} loading={busy} disabled={disabled}>
-        <Camera className="h-4 w-4" /> Capture & sign{marked ? ` · tag ${marked.uid}` : ""}
+        <Camera className="h-4 w-4" /> Capture & sign{browser ? " (this device's camera)" : ""}{marked ? ` · tag ${marked.uid}` : ""}
       </Button>
-      <div className="text-[11px] text-faint">Takes a fresh photo, reads the sensor board at the same moment, and signs both together.</div>
+      <div className="text-[11px] text-faint">{browser
+        ? "Takes the photo with this device's camera; sensor readings (if the board is online), RFID and the signature work as usual. The manifest records camera: browser."
+        : "Takes a fresh photo, reads the sensor board at the same moment, and signs both together."}</div>
       <ErrorNote>{err}</ErrorNote>
     </div>
   );
@@ -231,23 +291,44 @@ export function ManifestView({ s }: { s: any }) {
 export function DeviceLive({ dev, onCaptured, captureExtra }: { dev: any; onCaptured: (s: any) => void; captureExtra?: Record<string, unknown> }) {
   const { t } = useTelemetry(dev.id);
   const [marked, setMarked] = useState<MarkedTag>(null);
+  const [source, setSource] = useState<"rig" | "browser">("rig");
+  const [camDown, setCamDown] = useState(false);
+  const camRef = useRef<BrowserCamHandle | null>(null);
   // latch every tag the reader sees; it stays marked after the tag leaves the field
   useEffect(() => {
     const r = t?.rfid;
     if (r?.uid) setMarked((m) => (m?.uid === r.uid && m.label === r.label ? m : { uid: r.uid, label: r.label, asset_type: r.asset_type, at: Date.now() }));
   }, [t?.rfid?.uid, t?.rfid?.label]);
+  const boardOffline = !dev.simulated && t != null && !t.online;
+  const browser = source === "browser";
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-      <LiveStream devId={dev.id} simulated={dev.simulated} />
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button size="sm" variant={browser ? "ghost" : "secondary"} onClick={() => setSource("rig")}><Video className="h-3.5 w-3.5" /> Rig camera</Button>
+          <Button size="sm" variant={browser ? "secondary" : "ghost"} onClick={() => setSource("browser")}><Laptop className="h-3.5 w-3.5" /> This device's camera</Button>
+        </div>
+        {browser ? <BrowserCamera camRef={camRef} /> : <LiveStream devId={dev.id} simulated={dev.simulated} onDown={setCamDown} />}
+        {!browser && (camDown || boardOffline) && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
+            <span>{camDown ? "Rig camera is reconnecting." : "Sensor board is offline."} You can capture with this device's camera instead.</span>
+            <Button size="sm" onClick={() => setSource("browser")}><Laptop className="h-3.5 w-3.5" /> Use this device's camera</Button>
+          </div>
+        )}
+      </div>
       <div className="space-y-3">
         <SensorTiles t={t} />
         <RfidPanel t={t} marked={marked} onClear={() => setMarked(null)}
           onAssociated={(label) => setMarked((m) => (m ? { ...m, label, asset_type: m.asset_type || "product" } : m))} />
-        <CaptureButton devId={dev.id} marked={marked} extra={captureExtra}
-          disabled={!dev.simulated && t != null && !t.online}
+        <CaptureButton devId={dev.id} marked={marked} extra={captureExtra} browser={browser}
+          getImage={() => camRef.current?.grab() ?? Promise.resolve(null)}
+          disabled={!browser && (boardOffline || camDown)}
           onCaptured={(s) => { onCaptured(s); setMarked(null); }} />
-        {!dev.simulated && t != null && !t.online && (
-          <div className="text-[11px] text-bad">Sensor board offline: capture is disabled so every sample carries real readings.</div>
+        {!browser && boardOffline && (
+          <div className="text-[11px] text-bad">Sensor board offline: rig capture is disabled. Switch to this device's camera to capture without sensor readings.</div>
+        )}
+        {browser && boardOffline && (
+          <div className="text-[11px] text-warn">Sensor board offline: this capture will carry no sensor readings (recorded as sensor_board: offline in the signed manifest).</div>
         )}
       </div>
     </div>

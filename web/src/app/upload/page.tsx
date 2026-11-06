@@ -313,6 +313,9 @@ function Verify({ samples, update, onNext }: { samples: any[]; update: (id: stri
                       )}
                     </div>
                   )}
+                  {!s.storage_0g?.root_media && s.manifest?.meta?.["0g_error"] && (
+                    <div className="mt-1 text-[10px] text-warn">0G upload failed, stored locally only: {s.manifest.meta["0g_error"]}</div>
+                  )}
                 </div>
               )}
             </Card>

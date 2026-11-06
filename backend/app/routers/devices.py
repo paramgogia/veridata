@@ -235,15 +235,37 @@ class CaptureBody(BaseModel):
     description: str = ""
     categories: list[str] = []
     keywords: list[str] = []
+    # Fallback when the ESP32-CAM is down: a JPEG taken with the browser's own camera
+    # (base64). Sensors, RFID and signing are unchanged; the manifest records the camera used.
+    image_b64: str | None = None
+
+
+def _browser_jpeg(b64: str) -> bytes:
+    import base64
+    if "," in b64[:100]:  # strip a data: URL prefix
+        b64 = b64.split(",", 1)[1]
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "image_b64 is not valid base64")
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(413, "image larger than 8 MB")
+    if not data.startswith(b"\xff\xd8"):
+        raise HTTPException(400, "browser image must be a JPEG")
+    return data
 
 
 @router.post("/devices/{dev_id}/capture")
 async def capture(dev_id: str, body: CaptureBody, request: Request, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
     dev = _own(db, dev_id, user)
-    try:
-        jpeg = await hardware.capture_jpeg(dev)
-    except Exception as e:
-        raise HTTPException(502, f"capture failed: {type(e).__name__}: {str(e)[:120]}")
+    camera = "browser" if body.image_b64 else ("simulated" if dev.simulated else "esp32-cam")
+    if body.image_b64:
+        jpeg = _browser_jpeg(body.image_b64)
+    else:
+        try:
+            jpeg = await hardware.capture_jpeg(dev)
+        except Exception as e:
+            raise HTTPException(502, f"capture failed: {type(e).__name__}: {str(e)[:120]}")
     tel = _enrich(db, await hardware.telemetry(dev))
     st = quality.image_stats(jpeg)
     rfid = []
@@ -255,9 +277,13 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
         rfid.append({"uid": uid, "label": tag.label if tag else None,
                      "seen_ms_ago": (tel.get("rfid") or {}).get("seen_ms_ago") if (tel.get("rfid") or {}).get("uid") == uid else None})
     sensors = {k: tel.get(k) for k in ("ir", "temp_c", "humidity_pct") if tel.get(k) is not None}
-    if not dev.simulated and not tel.get("online"):
-        raise HTTPException(502, "sensor board offline: refusing to sign a capture without real sensor readings")
-    meta = {"fw": tel.get("fw"), "simulated": dev.simulated, "source": "device-capture"}
+    board_online = dev.simulated or bool(tel.get("online"))
+    if not board_online and camera != "browser":
+        raise HTTPException(502, "sensor board offline: use this device's camera to capture without sensor readings")
+    # `camera` and `sensor_board` are signed into the manifest, so a browser photo or a capture
+    # without sensor readings can never pass as a full rig capture.
+    meta = {"fw": tel.get("fw"), "simulated": dev.simulated, "source": "device-capture", "camera": camera,
+            "sensor_board": "online" if board_online else "offline"}
     manifest = provenance.build_manifest(dev, jpeg, st["width"], st["height"], sensors, rfid, meta)
     # 0G storage: encrypt + upload the ciphertext BEFORE signing, so the storage
     # root is part of the signed manifest's media block (resolvable independently).

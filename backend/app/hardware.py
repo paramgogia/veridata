@@ -94,9 +94,30 @@ async def capture_jpeg(dev: Device) -> bytes:
 # simply fails one request; the next poll retries, so the preview never freezes for good.
 _frames: dict[str, tuple[float, bytes]] = {}
 _frame_locks: dict[str, Any] = {}
+# One keep-alive client for preview polling: a new TCP connection per frame exhausts the CAM's
+# small socket pool (the ESP32 HTTP server allows only a handful of open sockets).
+_client: httpx.AsyncClient | None = None
 
 
-async def latest_frame(dev: Device, max_age: float = 0.25) -> bytes:
+def _cam_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=httpx.Timeout(6, connect=3),
+                                    limits=httpx.Limits(max_connections=2, max_keepalive_connections=2))
+    return _client
+
+
+async def _reset_cam_client() -> None:
+    global _client
+    c, _client = _client, None
+    if c is not None:
+        try:
+            await c.aclose()
+        except Exception:
+            pass
+
+
+async def latest_frame(dev: Device, max_age: float = 0.45) -> bytes:
     import asyncio
     if dev.simulated:
         return _sim_jpeg(dev)
@@ -108,11 +129,14 @@ async def latest_frame(dev: Device, max_age: float = 0.25) -> bytes:
         hit = _frames.get(dev.id)
         if hit and time.time() - hit[0] < max_age:
             return hit[1]
-        async with httpx.AsyncClient(timeout=httpx.Timeout(6, connect=3)) as c:
-            r = await c.get(dev.capture_url)
+        try:
+            r = await _cam_client().get(dev.capture_url)
             r.raise_for_status()
-            if not r.content.startswith(b"\xff\xd8"):
-                raise RuntimeError("camera did not return a JPEG")
+        except Exception:
+            await _reset_cam_client()  # drop a dead keep-alive socket (CAM rebooted / IP changed)
+            raise
+        if not r.content.startswith(b"\xff\xd8"):
+            raise RuntimeError("camera did not return a JPEG")
         _frames[dev.id] = (time.time(), r.content)
         return r.content
 

@@ -150,6 +150,22 @@ class License(Base):
     created_at = Column(Float, default=now)
 
 
+class WcPayment(Base):
+    """A gasless USDT license payment relayed on Whitechain Sepolia (VeridataPay)."""
+    __tablename__ = "wc_payments"
+    id = Column(Integer, primary_key=True)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), index=True)
+    buyer = Column(String(64), index=True)
+    seller = Column(String(64), index=True)
+    value = Column(BigInteger)        # USDT base units (6 dp)
+    fee = Column(BigInteger, default=0)
+    tx_hash = Column(String(80), default="")
+    gas_used = Column(BigInteger, default=0)
+    gas_cost_wei = Column(String(40), default="0")  # WBT paid by the relayer
+    via = Column(String(24), default="x402")  # x402-agent | x402-web
+    created_at = Column(Float, default=now)
+
+
 class DataRequest(Base):
     __tablename__ = "requests"
     id = Column(Integer, primary_key=True)
@@ -248,6 +264,31 @@ class AuditEvent(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """create_all() never alters existing tables, so columns added to a model later would make
+    every query on that table fail. Add them (nullable, with their scalar default) on startup."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                ddl = f'ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}'
+                d = col.default.arg if col.default is not None and not callable(col.default.arg) else None
+                if isinstance(d, str):
+                    ddl += " DEFAULT '" + d.replace("'", "''") + "'"
+                elif isinstance(d, bool):
+                    ddl += f" DEFAULT {int(d)}"
+                elif isinstance(d, (int, float)):
+                    ddl += f" DEFAULT {d}"
+                conn.execute(text(ddl))
 
 
 def get_db():

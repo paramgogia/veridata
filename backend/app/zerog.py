@@ -21,6 +21,39 @@ from typing import Any
 from . import config, storage
 
 _lock = threading.Lock()
+
+# The 0G storage SDK reads/writes files with os.pread/os.pwrite, which exist only on POSIX.
+# On Windows, emulate them with seek + read/write under a lock (same semantics for our use).
+if not hasattr(os, "pread"):
+    _pio_lock = threading.Lock()
+
+    def _pread(fd: int, n: int, offset: int) -> bytes:
+        with _pio_lock:
+            pos = os.lseek(fd, 0, os.SEEK_CUR)
+            try:
+                os.lseek(fd, offset, os.SEEK_SET)
+                chunks, left = [], n
+                while left > 0:
+                    b = os.read(fd, left)
+                    if not b:
+                        break
+                    chunks.append(b)
+                    left -= len(b)
+                return b"".join(chunks)
+            finally:
+                os.lseek(fd, pos, os.SEEK_SET)
+
+    def _pwrite(fd: int, data: bytes, offset: int) -> int:
+        with _pio_lock:
+            pos = os.lseek(fd, 0, os.SEEK_CUR)
+            try:
+                os.lseek(fd, offset, os.SEEK_SET)
+                return os.write(fd, data)
+            finally:
+                os.lseek(fd, pos, os.SEEK_SET)
+
+    os.pread = _pread    # type: ignore[attr-defined]
+    os.pwrite = _pwrite  # type: ignore[attr-defined]
 _ai_cache: tuple[float, dict[str, str] | None] = (0.0, None)
 VISION_HINT = ("omni", "vision", "glm-4.5", "glm-5", "gemma", "vlm", "vl-", "multimodal")
 # The 0G compute ledger contract requires this minimum to even create a ledger.
