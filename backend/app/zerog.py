@@ -118,8 +118,46 @@ def broker(network: str = "testnet"):
     raise last or RuntimeError("no 0G RPC reachable")
 
 
+_ft_cache: dict[str, Any] = {"data": None, "at": 0.0}
+_ft_lock = threading.Lock()
+
+
 def ft_status() -> dict[str, Any]:
-    """Read-only status of the 0G TEE fine-tuning pipeline (no txs)."""
+    """Read-only status of the 0G TEE fine-tuning pipeline (no txs).
+
+    The 0G RPC and provider hosts are flaky — this never blocks the API:
+    a 20s timeout guards the refresh, results are cached for 20s, and on
+    failure the last good snapshot (or a clear error) is returned."""
+    now = time.time()
+    with _ft_lock:
+        if _ft_cache["data"] is not None and now - _ft_cache["at"] < 20:
+            return _ft_cache["data"]
+    result: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            result["data"] = _ft_refresh()
+        except Exception as e:  # noqa: BLE001 - keep the endpoint alive
+            result["error"] = f"{type(e).__name__}: {str(e)[:160]}"
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout=20)  # never block the API longer than this; refresh finishes in background
+    with _ft_lock:
+        if result.get("data"):
+            _ft_cache["data"], _ft_cache["at"] = result["data"], time.time()
+            return result["data"]
+        if _ft_cache["data"] is not None:
+            d = dict(_ft_cache["data"])
+            d["stale"] = True
+            d["error"] = d.get("error") or "0G RPC slow — showing cached status"
+            return d
+        return {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {},
+                "tasks": [], "error": result.get("error") or "0G unreachable — status will appear when the network recovers"}
+
+
+def _ft_refresh() -> dict[str, Any]:
+    """One full status refresh; may take a while and runs inside a timeout guard."""
     out: dict[str, Any] = {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {}, "tasks": [], "error": ""}
     if not enabled():
         return out
