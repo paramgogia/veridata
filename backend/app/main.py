@@ -13,7 +13,7 @@ from .routers import core, devices, market, requests, samples, training
 
 app = FastAPI(title="Veridata API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"], expose_headers=["X-PAYMENT-RESPONSE"])
+                   allow_methods=["*"], allow_headers=["*"])
 
 # Simple sliding-window rate limit per IP (in-memory; use a shared store in production).
 _hits: dict[str, deque] = defaultdict(deque)

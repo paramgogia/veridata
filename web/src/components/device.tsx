@@ -1,5 +1,5 @@
 "use client";
-import { Camera, Nfc, Radio, RotateCw, Ruler, ScanLine, Wifi, WifiOff } from "lucide-react";
+import { Camera, Nfc, Radio, RotateCw, Ruler, ScanLine, Thermometer, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, url, WS_BASE } from "@/lib/api";
 import { Badge, Button, Card, CardHeader, cx, ErrorNote, Field } from "./ui";
@@ -10,7 +10,9 @@ export type Telemetry = {
   cam_online?: boolean;
   distance_cm?: number;
   ir?: boolean;
-  servo_deg?: number;
+  servo_deg?: number | null;
+  temp_c?: number | null;
+  humidity_pct?: number | null;
   rfid?: { uid: string; seen_ms_ago: number; label?: string | null; asset_type?: string | null } | null;
   fw?: string;
   error?: string;
@@ -94,10 +96,17 @@ export function SensorTiles({ t, history }: { t: Telemetry | null; history: numb
         <div className={cx("mt-1 text-lg font-semibold", t?.ir ? "text-warn" : "text-muted")}>{t ? (t.ir ? "Object detected" : "Clear") : "—"}</div>
         <div className="mt-1 text-[11px] text-faint">digital obstacle / presence output</div>
       </div>
+      {t?.temp_c !== undefined && (
+        <div className="rounded-xl border border-line bg-raised/40 p-3">
+          <div className="label flex items-center gap-1"><Thermometer className="h-3 w-3" /> Temp / humidity</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">{t.temp_c != null ? `${t.temp_c.toFixed(1)} °C` : "—"}</div>
+          <div className="mt-1 text-[11px] text-faint">{t.humidity_pct != null ? `${t.humidity_pct.toFixed(0)} % RH` : "DHT: no reading"}</div>
+        </div>
+      )}
       <div className="rounded-xl border border-line bg-raised/40 p-3">
         <div className="label flex items-center gap-1"><RotateCw className="h-3 w-3" /> Servo</div>
         <div className="mt-1 text-lg font-semibold tabular-nums">{t?.servo_deg != null ? `${Math.round(t.servo_deg)}°` : "—"}</div>
-        <div className="mt-1 text-[11px] text-faint">camera pan angle</div>
+        <div className="mt-1 text-[11px] text-faint">{t && t.servo_deg == null && !t.simulated ? "not fitted on this rig" : "camera pan angle"}</div>
       </div>
       <div className="rounded-xl border border-line bg-raised/40 p-3">
         <div className="label flex items-center gap-1">{t?.online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />} Link</div>
@@ -237,7 +246,7 @@ export function DeviceLive({ dev, onCaptured, captureExtra }: { dev: any; onCapt
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
       <div className="space-y-3">
         <LiveStream devId={dev.id} simulated={dev.simulated} />
-        <ServoControl devId={dev.id} value={t?.servo_deg} />
+        <ServoControl devId={dev.id} value={t?.servo_deg ?? undefined} />
       </div>
       <div className="space-y-3">
         <SensorTiles t={t} history={history} />

@@ -1,25 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title Veridata — device registry, dataset licensing and request escrow in one contract
+/// @title Veridata: device registry, dataset licensing and request escrow in one contract
 /// @notice Self-contained (no imports) so it compiles and deploys directly in Remix.
 ///         Payments are in native ETH (Sepolia). Constructor:
-///           Veridata(verifier, treasury, uploadFeeWei, platformFeeBps)
+///           Veridata(treasury, uploadFeeWei, platformFeeBps)   (treasury 0x0 = deployer)
 ///
 ///  Devices   : on-chain reference to a capture device's P-256 public key (no personal data).
 ///  Datasets  : contentRoot = sha256 Merkle root of signed capture manifests; storageRef points
 ///              to encrypted storage. Licenses are a non-transferable (dataset, buyer) flag that
 ///              grants training access inside the platform's controlled environment.
-///  x402-style: buyers prepay `credit`, then sign EIP-712 PaymentIntents per purchase; the
-///              platform facilitator relays them and pays gas.
-///  Escrow    : buyer funds pricePerSample * quantity; the verifier releases one payout per
-///              accepted sample; each sample hash can be paid only once (global); the buyer
+///  Escrow    : the buyer funds pricePerSample * quantity. The platform checks submitted samples
+///              off-chain; the BUYER then releases payouts for verified samples from their own
+///              wallet (releasePayouts). Each sample hash can be paid only once (global). The buyer
 ///              reclaims the unreleased balance after the deadline or once filled.
-/// @dev Verifier is a trusted platform role in this MVP. Not audited.
+///  No platform-held private key: every transaction is signed by a user's wallet.
+/// @dev Not audited.
 contract Veridata {
     // ---------------------------------------------------------------- config
     address public admin;
-    address public verifier;
     address public treasury;
     uint256 public uploadFee;
     uint16 public platformFeeBps;
@@ -36,18 +35,17 @@ contract Veridata {
         _;
     }
 
-    constructor(address _verifier, address _treasury, uint256 _uploadFee, uint16 _feeBps) {
+    constructor(address _treasury, uint256 _uploadFee, uint16 _feeBps) {
         require(_feeBps <= 2000, "fee too high");
         admin = msg.sender;
-        verifier = _verifier == address(0) ? msg.sender : _verifier;
         treasury = _treasury == address(0) ? msg.sender : _treasury;
         uploadFee = _uploadFee;
         platformFeeBps = _feeBps;
     }
 
-    function setConfig(address _verifier, address _treasury, uint256 _uploadFee, uint16 _feeBps) external onlyAdmin {
+    function setConfig(address _treasury, uint256 _uploadFee, uint16 _feeBps) external onlyAdmin {
         require(_feeBps <= 2000, "fee too high");
-        verifier = _verifier;
+        require(_treasury != address(0), "treasury");
         treasury = _treasury;
         uploadFee = _uploadFee;
         platformFeeBps = _feeBps;
@@ -108,7 +106,7 @@ contract Veridata {
 
     event DatasetPublished(uint256 indexed datasetId, address indexed owner, bytes32 contentRoot, uint256 price, string storageRef);
     event DatasetUpdated(uint256 indexed datasetId, uint256 price, bool listed);
-    event LicensePurchased(uint256 indexed datasetId, address indexed buyer, address indexed seller, uint256 price, uint256 platformFee, bool viaFacilitator);
+    event LicensePurchased(uint256 indexed datasetId, address indexed buyer, address indexed seller, uint256 price, uint256 platformFee);
 
     function publishDataset(bytes32 contentRoot, uint256 price, string calldata storageRef) external payable nonReentrant returns (uint256 id) {
         require(msg.value == uploadFee, "upload fee");
@@ -127,10 +125,10 @@ contract Veridata {
 
     function purchaseLicense(uint256 id) external payable nonReentrant {
         require(msg.value == datasets[id].price, "wrong amount");
-        _grant(id, msg.sender, false);
+        _grant(id, msg.sender);
     }
 
-    function _grant(uint256 id, address buyer, bool viaFacilitator) internal {
+    function _grant(uint256 id, address buyer) internal {
         Dataset storage d = datasets[id];
         require(d.owner != address(0) && d.listed, "not listed");
         require(!_licensed[id][buyer], "already licensed");
@@ -138,63 +136,11 @@ contract Veridata {
         uint256 fee = _fee(d.price);
         _send(treasury, fee);
         _send(d.owner, d.price - fee);
-        emit LicensePurchased(id, buyer, d.owner, d.price, fee, viaFacilitator);
+        emit LicensePurchased(id, buyer, d.owner, d.price, fee);
     }
 
     function hasLicense(uint256 id, address user) external view returns (bool) {
         return _licensed[id][user] || (datasets[id].owner == user && user != address(0));
-    }
-
-    // ---------------------------------------------------------------- x402-style prepaid credit
-    mapping(address => uint256) public credit;
-    mapping(address => uint256) public nonces;
-
-    event CreditDeposited(address indexed buyer, uint256 amount);
-    event CreditWithdrawn(address indexed buyer, uint256 amount);
-
-    bytes32 public constant PAYMENT_INTENT_TYPEHASH =
-        keccak256("PaymentIntent(uint256 datasetId,address buyer,uint256 amount,uint256 nonce,uint256 deadline)");
-
-    function depositCredit() external payable {
-        credit[msg.sender] += msg.value;
-        emit CreditDeposited(msg.sender, msg.value);
-    }
-
-    function withdrawCredit(uint256 amount) external nonReentrant {
-        require(credit[msg.sender] >= amount, "insufficient");
-        credit[msg.sender] -= amount;
-        _send(msg.sender, amount);
-        emit CreditWithdrawn(msg.sender, amount);
-    }
-
-    function domainSeparator() public view returns (bytes32) {
-        return keccak256(abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256(bytes("Veridata")), keccak256(bytes("1")), block.chainid, address(this)));
-    }
-
-    function purchaseLicenseWithSig(uint256 id, address buyer, uint256 amount, uint256 deadline, bytes calldata sig) external nonReentrant {
-        require(block.timestamp <= deadline, "expired");
-        require(amount == datasets[id].price, "wrong amount");
-        bytes32 structHash = keccak256(abi.encode(PAYMENT_INTENT_TYPEHASH, id, buyer, amount, nonces[buyer], deadline));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
-        require(_recover(digest, sig) == buyer, "bad signature");
-        require(credit[buyer] >= amount, "insufficient credit");
-        nonces[buyer]++;
-        credit[buyer] -= amount;
-        _grant(id, buyer, true);
-    }
-
-    function _recover(bytes32 digest, bytes calldata sig) internal pure returns (address) {
-        require(sig.length == 65, "sig length");
-        bytes32 r = bytes32(sig[0:32]);
-        bytes32 s = bytes32(sig[32:64]);
-        uint8 v = uint8(sig[64]);
-        if (v < 27) v += 27;
-        require(uint256(s) <= 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0, "bad s");
-        address signer = ecrecover(digest, v, r, s);
-        require(signer != address(0), "bad signature");
-        return signer;
     }
 
     // ---------------------------------------------------------------- request escrow
@@ -225,20 +171,26 @@ contract Veridata {
         emit RequestFunded(id, msg.sender, specHash, pricePerSample, quantity, deadline, msg.value);
     }
 
-    function acceptSample(uint256 id, bytes32 sampleHash, address contributor) external nonReentrant {
-        require(msg.sender == verifier, "not verifier");
+    /// @notice Buyer pays contributors for samples the platform has verified. Batch of up to 50.
+    function releasePayouts(uint256 id, bytes32[] calldata sampleHashes, address[] calldata contributors) external nonReentrant {
         Request storage r = requests[id];
-        require(r.buyer != address(0) && !r.closed, "closed");
-        require(block.timestamp <= r.deadline, "expired");
-        require(r.accepted < r.quantity, "full");
-        require(!claimedSample[sampleHash], "already claimed");
-        claimedSample[sampleHash] = true;
-        r.accepted += 1;
-        r.released += r.pricePerSample;
+        require(msg.sender == r.buyer, "not buyer");
+        require(!r.closed, "closed");
+        uint256 n = sampleHashes.length;
+        require(n > 0 && n <= 50 && n == contributors.length, "bad batch");
+        require(r.accepted + n <= r.quantity, "exceeds quantity");
         uint256 fee = _fee(r.pricePerSample);
-        _send(treasury, fee);
-        _send(contributor, r.pricePerSample - fee);
-        emit SampleAccepted(id, sampleHash, contributor, r.pricePerSample - fee, fee, r.accepted);
+        uint256 payout = r.pricePerSample - fee;
+        for (uint256 i = 0; i < n; i++) {
+            require(contributors[i] != address(0), "contributor");
+            require(!claimedSample[sampleHashes[i]], "already claimed");
+            claimedSample[sampleHashes[i]] = true;
+            r.accepted += 1;
+            r.released += r.pricePerSample;
+            _send(contributors[i], payout);
+            emit SampleAccepted(id, sampleHashes[i], contributors[i], payout, fee, r.accepted);
+        }
+        _send(treasury, fee * n);
     }
 
     function closeAndRefund(uint256 id) external nonReentrant {

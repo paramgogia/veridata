@@ -19,7 +19,7 @@ from ..serialize import device_view, sample_view
 
 router = APIRouter(prefix="/api")
 
-SENSORS = ["esp32-cam", "hc-sr04 ultrasonic", "ir obstacle", "rc522 rfid", "sg90 servo"]
+SENSORS = ["esp32-cam", "hc-sr04 ultrasonic", "ir obstacle", "rc522 rfid", "sg90 servo", "dht temp/humidity"]
 
 
 def chain_device_id(dev_id: str) -> str:
@@ -227,7 +227,7 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
         tag = db.get(RfidTag, uid)
         rfid.append({"uid": uid, "label": tag.label if tag else None,
                      "seen_ms_ago": (tel.get("rfid") or {}).get("seen_ms_ago") if (tel.get("rfid") or {}).get("uid") == uid else None})
-    sensors = {k: tel.get(k) for k in ("distance_cm", "ir", "servo_deg") if k in tel}
+    sensors = {k: tel.get(k) for k in ("distance_cm", "ir", "servo_deg", "temp_c", "humidity_pct") if tel.get(k) is not None}
     meta = {"fw": tel.get("fw"), "simulated": dev.simulated, "source": "device-capture"}
     manifest = provenance.build_manifest(dev, jpeg, st["width"], st["height"], sensors, rfid, meta)
     if dev.signing_mode == "device-hardware":

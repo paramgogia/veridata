@@ -9,12 +9,12 @@
    wagmi/viem   --WS--> | devices: registry, WS telemetry, MJPEG proxy,     |
         |               |   servo, capture -> manifest -> ES256 signature   |
         |               | samples: AES-256-GCM storage, quality/privacy      |
-        |               | market: datasets (Merkle root), licenses, x402     |
-        |               | requests: escrow accounting, verified payouts      |
+        |               | market: datasets (Merkle root), licenses           |
+        |               | requests: escrow, checks, buyer-released payouts   |
         |               | training: in-process PyTorch, weights + card       |
         |               | ledger + audit log (SQLite / Postgres)             |
         |               +-------------------+-------------------------------+
-        | user-signed txs                   | verifier/facilitator txs + receipt checks
+        | user-signed txs (wallet)          | receipt + event checks (no backend key)
         v                                   v
               Veridata.sol on Ethereum Sepolia (single contract)
 ```
@@ -36,8 +36,8 @@
 | Auth | `GET /api/auth/nonce`, `POST /api/auth/verify`, `POST /api/auth/demo`, `GET/PATCH /api/me` |
 | Devices | `GET/POST /api/devices`, `GET /api/devices/{id}`, `WS /api/devices/{id}/ws`, `GET /api/devices/{id}/stream`, `POST …/servo`, `POST …/capture`, `POST …/confirm-chain`, `GET/POST /api/rfid` |
 | Samples | `POST /api/samples/import`, `PATCH /api/samples/{id}`, `POST …/assess`, `POST …/verify`, `POST /api/demo/tamper/{id}` |
-| Market | `GET /api/datasets`, `GET /api/datasets/{id}`, `POST /api/datasets` (prepare), `POST …/confirm`, `POST …/verify`, `POST …/purchase`, `GET /api/x402/datasets/{id}/license` |
-| Requests | `GET/POST /api/requests`, `POST …/confirm`, `POST …/submit`, `POST …/refund` |
+| Market | `GET /api/datasets`, `GET /api/datasets/{id}`, `POST /api/datasets` (prepare), `POST …/confirm`, `POST …/verify`, `POST …/purchase` |
+| Requests | `GET/POST /api/requests`, `POST …/confirm`, `POST …/submit`, `GET …/pending-payouts`, `POST …/confirm-payouts`, `POST …/refund` |
 | Training | `GET /api/training/models`, `GET /api/training/datasets`, `/api/workspaces…`, `POST /api/workspaces/{id}/runs`, `GET /api/runs/{id}`, `…/weights`, `…/card` |
 
 ## Settlement modes

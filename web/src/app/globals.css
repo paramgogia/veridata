@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 :root {
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
   --bg: 10 11 13;
   --panel: 17 19 22;
   --raised: 24 27 31;

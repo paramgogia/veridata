@@ -404,7 +404,7 @@ function SubmitToRequest({ req, samples, onDone }: { req: any; samples: any[]; o
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">Submit {ok.length} verified samples to request #{req.id}</div>
-          <div className="text-xs text-muted">The verifier re-checks signature, hash, quality and duplicates, then releases {eth(req.price_per_sample)} per accepted sample from escrow ({req.mode === "onchain" ? "on Sepolia" : "demo ledger"}).</div>
+          <div className="text-xs text-muted">The platform re-checks signature, hash, quality and duplicates. {req.mode === "onchain" ? <>Passing samples are marked verified and the buyer releases {eth(req.price_per_sample)} each from the Sepolia escrow with their wallet.</> : <>Passing samples are paid {eth(req.price_per_sample)} each from the demo-ledger escrow.</>}</div>
         </div>
         {!res && <Button variant="primary" onClick={go} loading={busy} disabled={!ok.length}><Send className="h-4 w-4" /> Submit for payout</Button>}
       </div>
@@ -414,7 +414,9 @@ function SubmitToRequest({ req, samples, onDone }: { req: any; samples: any[]; o
           {res.results.map((r: any) => (
             <div key={r.sample_id} className="flex items-start justify-between gap-3 rounded-lg border border-line p-2.5 text-xs">
               <span className="font-mono">{r.sample_id.slice(0, 8)}</span>
-              {r.status === "accepted" ? (
+              {r.status === "verified" ? (
+                <Badge tone="chain">verified · awaiting buyer payout (+{eth(r.payout)})</Badge>
+              ) : r.status === "accepted" ? (
                 <span className="flex items-center gap-2"><Badge tone="ok">accepted · +{eth(r.payout)}</Badge><TxLink hash={r.tx_hash} urlStr={r.tx_url} mode={r.mode} /></span>
               ) : (
                 <span className="text-right text-bad">{r.reasons.join(" · ")}</span>

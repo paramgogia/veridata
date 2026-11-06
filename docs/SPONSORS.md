@@ -5,7 +5,7 @@ Source: https://ethglobal.com/events/mumbai/prizes (fetched during development).
 | Sponsor | Technology | Use case for Veridata | Effort | Priority | Status |
 |---|---|---|---|---|---|
 | **Ethereum (Sepolia)** | EVM testnet | Settles the device registry, licenses and escrow | Low | Core | **Implemented**: single `Veridata.sol`, deployed via Remix |
-| **x402 (protocol)** | HTTP 402 payments | Agents and buyers pay per license over HTTP | Medium | High | **Implemented (x402-style)**: 402 challenge → EIP-712 intent → facilitator relays `purchaseLicenseWithSig`. Uses prepaid ETH credit instead of EIP-3009 USDC, so it is **not** the canonical `exact` scheme |
+| x402 (protocol) | HTTP 402 payments | Agents pay per license over HTTP | Medium | Medium | **Removed**: a facilitator needs a platform-held private key, which the team chose not to run. Purchases are direct wallet calls |
 | **0G Private Computer** | OpenAI-compatible inference | Vision-language description match + privacy notes | Low | High | **Implemented as config**: point `AI_BASE_URL` / `AI_MODEL` at 0G; request IDs are stored. Not exercised unless configured |
 | Whitechain | OP-stack L2, USDT | Stablecoin settlement (Operate / Scale tracks) | Low–Med | Medium | **Not implemented**: the team chose Ethereum Sepolia + Remix. Porting = redeploy with USDT transfers instead of ETH |
 | Hedera | x402 on Hedera, HCS | x402 settlement + HCS audit log | Medium | Medium | Not implemented |

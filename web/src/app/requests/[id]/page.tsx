@@ -1,5 +1,5 @@
 "use client";
-import { Camera, Coins, Database, FlaskConical, Lock, RotateCcw } from "lucide-react";
+import { Camera, Coins, Database, FlaskConical, Lock, RotateCcw, Send } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -16,6 +16,8 @@ export default function RequestDetail() {
   const { data: r, loading, reload } = useApi<any>(`/api/requests/${id}`);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const isBuyerEarly = !!(me && r && r.buyer?.id === me.id && r.mode === "onchain");
+  const pending = useApi<any>(isBuyerEarly ? `/api/requests/${id}/pending-payouts` : null, [isBuyerEarly, r?.accepted, r?.submissions?.length]);
   if (loading && !r) return <Skeleton className="h-[500px]" />;
   if (!r) return <Empty title="Request not found" />;
   const isBuyer = me && r.buyer?.id === me.id;
@@ -30,6 +32,26 @@ export default function RequestDetail() {
       if (r.mode === "onchain") tx = await sendVeridata(chain!.contract, "closeAndRefund", [BigInt(r.chain_request_id)]);
       await api(`/api/requests/${r.id}/refund`, { method: "POST", json: { tx_hash: tx } });
       await Promise.all([reload(), refresh()]);
+    } catch (e: any) {
+      setErr(txErr(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const release = async () => {
+    const p = pending.data;
+    if (!p?.items?.length) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const tx = await sendVeridata(chain!.contract, "releasePayouts", [
+        BigInt(p.chain_request_id),
+        p.items.map((x: any) => x.sample_hash as `0x${string}`),
+        p.items.map((x: any) => x.contributor as `0x${string}`),
+      ]);
+      await api(`/api/requests/${r.id}/confirm-payouts`, { method: "POST", json: { tx_hash: tx } });
+      await Promise.all([reload(), refresh(), pending.reload()]);
     } catch (e: any) {
       setErr(txErr(e));
     } finally {
@@ -76,10 +98,10 @@ export default function RequestDetail() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-medium">{x.contributor?.name}</span>
-                      <Badge tone={x.status === "accepted" ? "ok" : x.status === "rejected" ? "bad" : "neutral"}>{x.status}</Badge>
+                      <Badge tone={x.status === "accepted" ? "ok" : x.status === "rejected" ? "bad" : x.status === "verified" ? "chain" : "neutral"}>{x.status === "verified" ? "verified · awaiting payout" : x.status}</Badge>
                     </div>
                     <div className="mt-0.5 text-xs text-muted">
-                      {x.status === "accepted" ? <>+{eth(x.payout)} · <TxLink hash={x.tx_hash} urlStr={x.tx_url} mode={x.mode} /></> : x.reasons?.join(" · ")}
+                      {x.status === "verified" ? <>passed all checks · +{eth(x.payout)} once the buyer releases</> : x.status === "accepted" ? <>+{eth(x.payout)} · <TxLink hash={x.tx_hash} urlStr={x.tx_url} mode={x.mode} /></> : x.reasons?.join(" · ")}
                     </div>
                     <div className="text-[11px] text-faint">{ago(x.created_at)}</div>
                   </div>
@@ -117,6 +139,14 @@ export default function RequestDetail() {
             </div>
             {isBuyer && (
               <div className="space-y-2 border-t border-line p-5">
+                {r.mode === "onchain" && (pending.data?.items?.length ?? 0) > 0 && (
+                  <>
+                    <Button variant="chain" className="w-full" onClick={release} loading={busy}>
+                      <Send className="h-4 w-4" /> Release {pending.data.items.length} payout{pending.data.items.length > 1 ? "s" : ""} ({eth(pending.data.total)})
+                    </Button>
+                    <Note>These samples passed signature, hash, quality and duplicate checks. Your wallet sends releasePayouts; the contract pays each contributor and the 5% fee.</Note>
+                  </>
+                )}
                 {r.delivery_dataset_id && (
                   <Button className="w-full" href={`/workspace?add=${r.delivery_dataset_id}`}><FlaskConical className="h-4 w-4" /> Train on delivered samples</Button>
                 )}

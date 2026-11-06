@@ -7,16 +7,16 @@
 | Replayed capture signatures | Unique `capture_id` + random `nonce` per manifest; a duplicate `manifest_hash` fails verification (the `replay` step) |
 | Signature from a non-registered key | The manifest's key fingerprint must match the registered device key; ES256 is verified against that key |
 | Duplicate samples / double-claimed rewards | Each sample can be accepted once; identical-media check (sha256) across all submissions; near-duplicate dHash in quality checks; global `claimedSample[hash]` in the contract; server-side lock around acceptance |
-| Manipulated fulfillment records | Payouts require backend verification; on-chain `acceptSample` is verifier-only and capped at `quantity`; escrow math lives in the contract |
+| Manipulated fulfillment records | Only the request's buyer can call `releasePayouts`, capped at `quantity`; the backend records a payout only after decoding `SampleAccepted` events whose sample hash and contributor match a verified submission |
 | Unauthorized dataset access | No endpoint returns decrypted media to buyers; `/samples/{id}/original` is owner-only; `/datasets/{id}/download` always returns 403 and is audited; training checks licenses before decrypting |
 | Dataset redistribution | Not fully preventable: weights can memorize data. We report a generalization gap and state this limitation |
 | Login replay | One-time nonces, deleted on use, expiring after 5 minutes; HMAC-signed session tokens |
-| x402 payment replay | EIP-712 intent with a per-buyer nonce and deadline, checked by the contract; the backend checks domain, amount, signer and credit before relaying |
 | Abuse | In-memory per-IP rate limiting; 8 MB upload cap; image decode validation |
 | Secrets | `.env` is gitignored; master and session keys are generated into `backend/data/` (gitignored); in hardware mode the device private key stays in ESP32 NVS |
 
 ## Trusted roles
-- **Verifier / facilitator** (backend key): the only address that can release escrow payouts, and it also relays x402 purchases. A compromised verifier could pay out the remaining escrow of open requests to arbitrary addresses. Production mitigations: multisig or threshold verifiers, per-request payout rate limits, optimistic challenge windows.
+- **No platform signing key.** The backend never sends transactions. The contract admin can only change the treasury address, upload fee and fee rate (capped at 20%).
+- **Buyer** releases payouts for samples the platform verified. A buyer can withhold payment and refund after the deadline. Production mitigation: an optimistic window after which verified samples become claimable by contributors, or an arbiter.
 - **Platform master key**: wraps per-file AES keys and dev-software device keys. Use a KMS/HSM in production.
 
 ## Not done (would be required for production)

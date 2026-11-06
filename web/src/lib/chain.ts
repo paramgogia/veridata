@@ -10,7 +10,7 @@ type Fn =
   | "purchaseLicense"
   | "createRequest"
   | "closeAndRefund"
-  | "depositCredit";
+  | "releasePayouts";
 
 /** Send a Veridata contract call from the connected wallet and wait for 1 confirmation. */
 export async function sendVeridata(contract: string, functionName: Fn, args: readonly unknown[], value?: bigint): Promise<`0x${string}`> {

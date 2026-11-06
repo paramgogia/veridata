@@ -1,16 +1,14 @@
 "use client";
-import { Bot, Cpu, FlaskConical, Lock, MapPin, ShieldAlert, ShoppingCart, Tag } from "lucide-react";
+import { Cpu, FlaskConical, Lock, MapPin, ShieldAlert, ShoppingCart, Tag } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { signTypedData } from "wagmi/actions";
 import { ProofCard, TxLink, useSettlement } from "@/components/domain";
 import { Badge, Button, Card, CardHeader, Empty, ErrorNote, KV, ModeBadge, Note, Skeleton, useApi } from "@/components/ui";
 import { API_BASE, api, getToken, url } from "@/lib/api";
 import { sendVeridata, txErr } from "@/lib/chain";
 import { day, eth, num, toWei } from "@/lib/format";
 import { useSession } from "@/lib/session";
-import { wagmiConfig } from "@/lib/wagmi";
 
 export default function DatasetDetail() {
   const { id } = useParams<{ id: string }>();
@@ -34,39 +32,6 @@ export default function DatasetDetail() {
         await api(`/api/datasets/${d.id}/purchase`, { method: "POST", json: { tx_hash: tx } });
       } else {
         await api(`/api/datasets/${d.id}/purchase`, { method: "POST", json: {} });
-      }
-      await Promise.all([reload(), refresh()]);
-    } catch (e: any) {
-      setErr(txErr(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  // x402: HTTP 402 → sign EIP-712 PaymentIntent → retry with X-PAYMENT; facilitator settles on-chain.
-  const buyX402 = async () => {
-    setErr(null);
-    setBusy("x402");
-    try {
-      const endpoint = `${API_BASE}/api/x402/datasets/${d.id}/license?buyer=${me!.address}`;
-      const first = await fetch(endpoint);
-      if (first.status !== 402) throw new Error((await first.json()).detail || `expected 402, got ${first.status}`);
-      const req = (await first.json()).accepts[0];
-      const typed = req.extra.typedData;
-      if (BigInt(req.extra.buyerCredit) < BigInt(req.maxAmountRequired)) {
-        await sendVeridata(contract, "depositCredit", [], BigInt(req.maxAmountRequired) - BigInt(req.extra.buyerCredit));
-      }
-      const signature = await signTypedData(wagmiConfig, {
-        domain: { ...typed.domain, chainId: Number(typed.domain.chainId) },
-        types: typed.types,
-        primaryType: "PaymentIntent",
-        message: { ...typed.message, datasetId: BigInt(typed.message.datasetId), amount: BigInt(typed.message.amount), nonce: BigInt(typed.message.nonce), deadline: BigInt(typed.message.deadline) },
-      } as any);
-      const payment = btoa(JSON.stringify({ x402Version: 1, scheme: req.scheme, network: req.network, payload: { typedData: typed, signature } }));
-      const paid = await fetch(endpoint, { headers: { "X-PAYMENT": payment } });
-      if (!paid.ok) {
-        const j = await paid.json().catch(() => ({}));
-        throw new Error(j.detail || j.error || "payment failed");
       }
       await Promise.all([reload(), refresh()]);
     } catch (e: any) {
@@ -169,7 +134,6 @@ export default function DatasetDetail() {
                   <Badge tone="ok">{own ? "You own this dataset" : "Licensed"}</Badge>
                   {d.license_record && (
                     <div className="text-xs text-muted">
-                      {d.license_record.via === "x402" ? "Paid via x402 · " : ""}
                       <TxLink hash={d.license_record.tx_hash} urlStr={d.license_record.tx_url} mode={d.license_record.mode} />
                     </div>
                   )}
@@ -185,11 +149,6 @@ export default function DatasetDetail() {
                   <Button variant={mode === "onchain" ? "chain" : "primary"} className="w-full" onClick={buy} loading={busy === "buy"}>
                     <ShoppingCart className="h-4 w-4" /> {mode === "onchain" ? "Buy license on Sepolia" : "Buy with demo ledger"}
                   </Button>
-                  {mode === "onchain" && d.mode === "onchain" && (
-                    <Button variant="secondary" className="w-full" onClick={buyX402} loading={busy === "x402"}>
-                      <Bot className="h-4 w-4" /> Pay via x402 (gasless intent)
-                    </Button>
-                  )}
                   {mode === "onchain" && d.mode !== "onchain" && <Note tone="warn">This is a demo-seed listing, not on-chain. Use the demo ledger or publish your own dataset on Sepolia.</Note>}
                 </>
               )}

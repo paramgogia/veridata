@@ -1,6 +1,6 @@
 # Implementation checklist
 
-- [x] Single Remix-deployable contract: device registry, dataset publish + upload fee, licenses, x402 prepaid intents, request escrow, payouts, refunds, global duplicate-claim guard
+- [x] Single Remix-deployable contract: device registry, dataset publish + upload fee, licenses, request escrow, buyer-released payouts, refunds, global duplicate-claim guard; no platform private key
 - [x] Wallet auth (EIP-191 nonce) + demo personas, role flags
 - [x] Device registration (hardware key via `/pubkey`, or a labelled dev-software key), on-chain anchoring
 - [x] Live device dashboard: MJPEG proxy, WebSocket telemetry, ultrasonic, IR, RFID detection + tag association, servo control
@@ -14,7 +14,7 @@
 - [x] Training Room: licensed datasets only, base models, config, real PyTorch training, live metrics, before/after, weights + model card export, raw-export denial
 - [x] Dashboard, profile, transactions, audit log
 - [x] ESP32 main-board firmware written (sensors, servo, RFID, on-device P-256 signing)
-- [x] Autonomous x402 agent script
+- [x] NodeMCU ESP8266 sensor firmware written (IR, DHT, RFID → `/sensors`)
 - [ ] Firmware compiled and validated on the physical rig
 - [ ] Contract deployed on Sepolia (deploy with Remix, then set `.env`)
 - [ ] On-chain flows exercised end to end against the deployed contract

@@ -23,9 +23,8 @@ export type ChainCfg = {
   chainId: number;
   contract: string;
   explorer: string;
-  relayer: boolean;
   uploadFeeWei?: string;
-  verifier?: string;
+  treasury?: string;
 };
 
 type Ctx = {

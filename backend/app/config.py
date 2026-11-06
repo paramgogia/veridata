@@ -63,9 +63,7 @@ CHAIN_ID = int(env("CHAIN_ID", "11155111"))
 CHAIN_RPC_URL = env("CHAIN_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com")
 CONTRACT_ADDRESS = env("VERIDATA_CONTRACT_ADDRESS")
 EXPLORER_URL = env("EXPLORER_URL", "https://sepolia.etherscan.io")
-# Key of the address passed as `verifier` to the constructor. It relays x402 purchases and
-# releases escrow payouts. Never commit it.
-VERIFIER_PRIVATE_KEY = env("VERIFIER_PRIVATE_KEY")
+# No platform private key: every transaction is signed in the user's wallet.
 
 # DB amounts are integer gwei (1e-9 ETH); the contract uses wei.
 GWEI = 10**9

@@ -1,5 +1,9 @@
 """Buyer-funded data requests: create + escrow, submissions, verification-gated payouts, refunds.
 
+Demo-ledger requests pay out immediately when a sample passes the checks. On-chain requests
+mark passing samples as `verified`; the buyer then releases the payouts from their own wallet
+(Veridata.releasePayouts), so the platform never holds a private key.
+
 Accepted samples are delivered into a private 'delivery' dataset owned by the buyer
 (contributors keep attribution per sample), which the buyer can use in the Training Room."""
 from __future__ import annotations
@@ -139,10 +143,10 @@ def _check(db: Session, r: DataRequest, s: Sample, user: User) -> list[str]:
     spec = r.spec or {}
     if s.owner_id != user.id:
         return ["not your sample"]
-    if db.query(Submission).filter(Submission.sample_id == s.id, Submission.status == "accepted").first():
+    if db.query(Submission).filter(Submission.sample_id == s.id, Submission.status.in_(["accepted", "verified"])).first():
         return ["sample already accepted for a request (duplicate reward claim)"]
     dup = (db.query(Sample).filter(Sample.media_sha256 == s.media_sha256, Sample.id != s.id).all())
-    if any(db.query(Submission).filter(Submission.sample_id == d.id, Submission.status == "accepted").first() for d in dup):
+    if any(db.query(Submission).filter(Submission.sample_id == d.id, Submission.status.in_(["accepted", "verified"])).first() for d in dup):
         return ["identical media already rewarded (duplicate content hash)"]
     ver = provenance.verify_sample(db, s)
     if spec.get("require_device_signature", True) and not ver["valid"]:
@@ -163,7 +167,7 @@ def _check(db: Session, r: DataRequest, s: Sample, user: User) -> list[str]:
     for f in spec.get("required_metadata", []):
         if f == "rfid" and not s.rfid:
             reasons.append("RFID tag association required")
-        elif f in ("distance_cm", "ir") and f not in (s.sensors or {}):
+        elif f in ("distance_cm", "ir", "temp_c", "humidity_pct") and f not in (s.sensors or {}):
             reasons.append(f"sensor reading '{f}' required")
         elif f == "description" and not s.description:
             reasons.append("description required")
@@ -179,6 +183,36 @@ def _delivery_dataset(db: Session, r: DataRequest) -> Dataset:
         db.add(d)
         db.flush()
     return d
+
+
+def _pending(db: Session, r: DataRequest) -> int:
+    return db.query(Submission).filter(Submission.request_id == r.id, Submission.status == "verified").count()
+
+
+def _sample_hash(s: Sample) -> str:
+    return s.manifest_hash or s.media_sha256
+
+
+def _accept(db: Session, r: DataRequest, s: Sample, sub: Submission, contributor: User, tx: str = "") -> int:
+    """Bookkeeping for a paid sample: ledger, delivery dataset, counters."""
+    fee = ledger.fee(r.price_per_sample)
+    payout = r.price_per_sample - fee
+    sub.status, sub.payout, sub.tx_hash = "accepted", payout, tx
+    r.accepted += 1
+    r.released += r.price_per_sample
+    ledger.record(db, "payout", payout, to=contributor.id, mode=r.mode, tx_hash=tx, ref=f"request:{r.id}",
+                  memo=f"buyer:{r.buyer_id}", chain_id=CHAIN_ID if r.mode == "onchain" else None)
+    ledger.record(db, "platform_fee", fee, mode=r.mode, tx_hash=tx, ref=f"request:{r.id}")
+    d = _delivery_dataset(db, r)
+    s.dataset_id = d.id
+    s.status = "published"
+    db.flush()
+    root, n = provenance.dataset_root(db, d)
+    d.content_root, d.sample_count = root, n
+    contributor.reputation = round(min(5.0, (contributor.reputation or 0) + 0.02), 2)
+    if r.accepted >= r.quantity:
+        r.status = "filled"
+    return payout
 
 
 @router.post("/requests/{rid}/submit")
@@ -198,7 +232,7 @@ def submit(rid: int, body: SubmitBody, request: Request, user: User = Depends(au
                 results.append({"sample_id": sid, "status": "rejected", "reasons": ["not found"]})
                 continue
             reasons = _check(db, r, s, user)
-            if not reasons and r.accepted >= r.quantity:
+            if not reasons and r.accepted + (_pending(db, r) if r.mode == "onchain" else 0) >= r.quantity:
                 reasons = ["request already fully filled"]
             sub = Submission(request_id=r.id, sample_id=s.id, contributor_id=user.id, mode=r.mode)
             db.add(sub)
@@ -206,37 +240,68 @@ def submit(rid: int, body: SubmitBody, request: Request, user: User = Depends(au
                 sub.status, sub.reasons = "rejected", reasons
                 results.append({"sample_id": sid, "status": "rejected", "reasons": reasons})
                 continue
-            fee = ledger.fee(r.price_per_sample)
-            payout = r.price_per_sample - fee
             if r.mode == "onchain":
-                try:
-                    tx = chain.accept_sample(r.chain_request_id, s.manifest_hash or s.media_sha256, user.address)
-                except Exception as e:
-                    sub.status, sub.reasons = "rejected", [f"on-chain payout failed: {str(e)[:120]}"]
-                    results.append({"sample_id": sid, "status": "error", "reasons": sub.reasons})
-                    continue
-                sub.tx_hash = tx
-            sub.status, sub.payout = "accepted", payout
-            r.accepted += 1
-            r.released += r.price_per_sample
-            ledger.record(db, "payout", payout, to=user.id, mode=r.mode, tx_hash=sub.tx_hash, ref=f"request:{r.id}",
-                          memo=f"buyer:{r.buyer_id}", chain_id=CHAIN_ID if r.mode == "onchain" else None)
-            ledger.record(db, "platform_fee", fee, mode=r.mode, tx_hash=sub.tx_hash, ref=f"request:{r.id}")
-            d = _delivery_dataset(db, r)
-            s.dataset_id = d.id
-            s.status = "published"
-            d.sample_count = db.query(Sample).filter(Sample.dataset_id == d.id).count() + 0
-            db.flush()
-            root, n = provenance.dataset_root(db, d)
-            d.content_root, d.sample_count = root, n
-            user.reputation = round(min(5.0, (user.reputation or 0) + 0.02), 2)
-            results.append({"sample_id": sid, "status": "accepted", "payout": payout, "tx_hash": sub.tx_hash,
-                            "tx_url": chain.explorer_tx(sub.tx_hash), "mode": r.mode})
-        if r.accepted >= r.quantity:
-            r.status = "filled"
+                # passed every check; the buyer releases the ETH from their own wallet
+                sub.status, sub.payout = "verified", r.price_per_sample - ledger.fee(r.price_per_sample)
+                db.flush()
+                results.append({"sample_id": sid, "status": "verified", "payout": sub.payout, "mode": r.mode,
+                                "note": "verified; waiting for the buyer to release the payout on-chain"})
+                continue
+            payout = _accept(db, r, s, sub, user)
+            results.append({"sample_id": sid, "status": "accepted", "payout": payout, "tx_hash": "", "tx_url": "", "mode": r.mode})
         audit(db, user.address, "request.submit", str(r.id), {"results": [(x["sample_id"][:8], x["status"]) for x in results]}, auth.client_ip(request))
         db.commit()
         return {"results": results, "request": request_view(db, r)}
+
+
+@router.get("/requests/{rid}/pending-payouts")
+def pending_payouts(rid: int, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    """Verified samples awaiting the buyer's on-chain releasePayouts call (args ready for the wallet)."""
+    r = db.get(DataRequest, rid)
+    if not r or r.buyer_id != user.id:
+        raise HTTPException(404, "request not found")
+    subs = db.query(Submission).filter(Submission.request_id == rid, Submission.status == "verified").order_by(Submission.id).limit(50).all()
+    items = []
+    for sub in subs:
+        s, c = db.get(Sample, sub.sample_id), db.get(User, sub.contributor_id)
+        items.append({"submission_id": sub.id, "sample_id": s.id, "sample_hash": "0x" + _sample_hash(s),
+                      "contributor": c.address, "contributor_name": c.name, "payout": sub.payout})
+    return {"chain_request_id": r.chain_request_id, "price_per_sample": r.price_per_sample, "items": items,
+            "total": r.price_per_sample * len(items)}
+
+
+@router.post("/requests/{rid}/confirm-payouts")
+def confirm_payouts(rid: int, body: ConfirmBody, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    """Verify the buyer's releasePayouts tx and mark the matching samples accepted."""
+    with _submit_lock:
+        r = db.get(DataRequest, rid)
+        if not r or r.buyer_id != user.id:
+            raise HTTPException(404, "request not found")
+        if r.mode != "onchain" or not body.tx_hash:
+            raise HTTPException(400, "tx_hash of a releasePayouts transaction is required")
+        if db.query(Submission).filter(Submission.tx_hash == body.tx_hash).first():
+            raise HTTPException(409, "transaction already recorded")
+        try:
+            events = chain.verify_events(body.tx_hash, "SampleAccepted", sender=user.address)
+        except chain.ChainError as e:
+            raise HTTPException(400, str(e))
+        pending = {(_sample_hash(db.get(Sample, sub.sample_id)) or "").lower(): sub
+                   for sub in db.query(Submission).filter(Submission.request_id == rid, Submission.status == "verified").all()}
+        done = []
+        for ev in events:
+            if int(ev["requestId"]) != r.chain_request_id:
+                raise HTTPException(400, "transaction pays a different request")
+            sub = pending.pop(str(ev["sampleHash"]).removeprefix("0x").lower(), None)
+            if not sub:
+                continue
+            contributor = db.get(User, sub.contributor_id)
+            if (contributor.address or "").lower() != str(ev["contributor"]).lower():
+                continue
+            _accept(db, r, db.get(Sample, sub.sample_id), sub, contributor, body.tx_hash)
+            done.append(sub.id)
+        audit(db, user.address, "request.release", str(r.id), {"tx": body.tx_hash, "accepted": len(done)})
+        db.commit()
+        return request_view(db, r) | {"released": len(done), "tx_url": chain.explorer_tx(body.tx_hash)}
 
 
 @router.post("/requests/{rid}/refund")

@@ -1,5 +1,5 @@
 """Dataset marketplace: search, detail/Proof Card, publish (on-chain or demo ledger),
-dataset-level verification, license purchase, and the x402 pay-per-license endpoint."""
+dataset-level verification and license purchase."""
 from __future__ import annotations
 
 import base64
@@ -217,71 +217,3 @@ def purchase(ds_id: int, body: PurchaseBody, user: User = Depends(auth.current_u
         _grant(db, d, user, "local")
     db.commit()
     return {"ok": True, "dataset_id": ds_id}
-
-
-# ---------------- x402: HTTP 402 pay-per-license ----------------
-
-def _x402_requirements(d: Dataset, request: Request, buyer: str | None) -> dict:
-    req = {
-        "scheme": "eip712-prepaid-credit", "network": f"eip155:{CHAIN_ID}", "maxAmountRequired": str(d.price * GWEI),
-        "asset": "ETH", "payTo": chain.config.CONTRACT_ADDRESS, "resource": str(request.url).split("?")[0],
-        "description": f"Training license for dataset #{d.id}: {d.title}", "mimeType": "application/json", "maxTimeoutSeconds": 300,
-        "extra": {"chainDatasetId": d.chain_dataset_id, "settlement": "Veridata.purchaseLicenseWithSig (facilitator pays gas)",
-                  "prerequisite": "buyer must hold >= amount in Veridata.credit (depositCredit)"},
-    }
-    if buyer:
-        credit, nonce = chain.credit_and_nonce(buyer)
-        deadline = int(time.time()) + 300
-        req["extra"]["typedData"] = chain.payment_intent_typed_data(d.chain_dataset_id, buyer, d.price * GWEI, nonce, deadline)
-        req["extra"]["buyerCredit"] = str(credit)
-    return req
-
-
-@router.get("/x402/datasets/{ds_id}/license")
-def x402_license(ds_id: int, request: Request, buyer: str = "", x_payment: str = Header(default=""), db: Session = Depends(get_db)):
-    d = db.get(Dataset, ds_id)
-    if not d or d.status != "listed":
-        raise HTTPException(404, "dataset not available")
-    if not chain.relayer_enabled() or d.mode != "onchain":
-        raise HTTPException(503, "x402 requires an on-chain listing and a configured facilitator (VERIFIER_PRIVATE_KEY)")
-    if not x_payment:
-        return JSONResponse(status_code=402, content={"x402Version": 1, "error": "X-PAYMENT header is required",
-                                                      "accepts": [_x402_requirements(d, request, buyer or None)]})
-    try:
-        pay = json.loads(base64.b64decode(x_payment))
-        p = pay["payload"]
-        typed, sig = p["typedData"], p["signature"]
-        msg = typed["message"]
-        if int(msg["datasetId"]) != d.chain_dataset_id or int(msg["amount"]) != d.price * GWEI:
-            raise ValueError("payment intent does not match this resource")
-        if typed["domain"]["verifyingContract"].lower() != chain.config.CONTRACT_ADDRESS.lower() or int(typed["domain"]["chainId"]) != CHAIN_ID:
-            raise ValueError("wrong domain")
-        signer = chain.recover_intent_signer(typed, sig)
-        if signer.lower() != msg["buyer"].lower():
-            raise ValueError("signature does not match buyer")
-        credit, nonce = chain.credit_and_nonce(signer)
-        if credit < int(msg["amount"]):
-            raise ValueError("insufficient prepaid credit")
-        if int(msg["nonce"]) != nonce:
-            raise ValueError("stale nonce")
-    except HTTPException:
-        raise
-    except Exception as e:
-        return JSONResponse(status_code=402, content={"x402Version": 1, "error": f"invalid payment: {e}",
-                                                      "accepts": [_x402_requirements(d, request, buyer or None)]})
-    buyer_user = db.query(User).filter(User.address == signer.lower()).first()
-    if not buyer_user:
-        buyer_user = User(address=signer.lower(), name=f"agent {signer[:6]}…{signer[-4:]}")
-        db.add(buyer_user)
-        db.flush()
-    if db.query(License).filter(License.dataset_id == ds_id, License.buyer_id == buyer_user.id).first():
-        raise HTTPException(409, "already licensed")
-    try:
-        tx = chain.purchase_with_sig(d.chain_dataset_id, signer, int(msg["amount"]), int(msg["deadline"]), sig)
-    except chain.ChainError as e:
-        raise HTTPException(502, f"settlement failed: {e}")
-    _grant(db, d, buyer_user, "onchain", tx, via="x402")
-    db.commit()
-    receipt = {"success": True, "transaction": tx, "network": f"eip155:{CHAIN_ID}", "payer": signer}
-    return JSONResponse(content={"license": {"dataset_id": ds_id, "buyer": signer, "tx": tx, "tx_url": chain.explorer_tx(tx)}},
-                        headers={"X-PAYMENT-RESPONSE": base64.b64encode(json.dumps(receipt).encode()).decode()})

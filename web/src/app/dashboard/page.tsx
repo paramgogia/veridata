@@ -102,7 +102,7 @@ function Dashboard() {
                 {x.licenses.map((l: any, i: number) => (
                   <Link key={i} href={`/marketplace/${l.dataset.id}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-xs hover:bg-raised/40">
                     <span className="truncate">{l.dataset.title}</span>
-                    <span className="flex shrink-0 items-center gap-2">{l.via === "x402" && <Badge tone="chain">x402</Badge>}<TxLink hash={l.tx_hash} urlStr={l.tx_url} mode={l.mode} /></span>
+                    <span className="flex shrink-0 items-center gap-2"><TxLink hash={l.tx_hash} urlStr={l.tx_url} mode={l.mode} /></span>
                   </Link>
                 ))}
                 {x.runs.map((r: any) => (
