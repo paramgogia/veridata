@@ -107,6 +107,48 @@ def broker(network: str = "testnet"):
     return z.create_broker(config.WALLET_PRIVATE_KEY, network=network, rpc_url=rpc)
 
 
+def ft_status() -> dict[str, Any]:
+    """Read-only status of the 0G TEE fine-tuning pipeline (no txs)."""
+    out: dict[str, Any] = {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {}, "tasks": [], "error": ""}
+    if not enabled():
+        return out
+    try:
+        b = broker("testnet")
+        svcs = b.fine_tuning.list_service()
+        if not svcs:
+            out["error"] = "no fine-tuning provider registered"
+            return out
+        provider = svcs[0].provider
+        out["provider"] = provider
+        bal = wallet_balance_0g("testnet")
+        out["funding"]["wallet_0g"] = round(bal / 1e18, 4)
+        out["funding"]["min_ledger_0g"] = MIN_COMPUTE_LEDGER_0G
+        try:
+            det = b.ledger.get_ledger_with_detail()
+            out["funding"]["ledger_total_0g"] = round(int(det.total_balance) / 1e18, 4)
+        except Exception:
+            out["funding"]["ledger_total_0g"] = 0
+        try:
+            acc = b.fine_tuning.get_account(provider)
+            d = getattr(acc, "account", acc) or acc
+            out["funding"]["provider_balance_0g"] = round(int(getattr(d, "balance", 0)) / 1e18, 4)
+        except Exception:
+            out["funding"]["provider_balance_0g"] = 0
+        tasks = b.fine_tuning.list_task(provider)
+        for t in (tasks if isinstance(tasks, list) else [tasks]):
+            out["tasks"].append({
+                "id": getattr(t, "id", ""),
+                "created_at": getattr(t, "created_at", ""),
+                "progress": getattr(t, "progress", ""),
+                "deliver_index": getattr(t, "deliver_index", 0),
+                "fee_0g": round(int(getattr(t, "fee", 0) or 0) / 1e18, 6),
+                "params": getattr(t, "training_params", ""),
+            })
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    return out
+
+
 def compute_status() -> dict[str, Any]:
     """Report for /api/config: what the compute layer will do."""
     if config.AI_BASE_URL and config.AI_MODEL:

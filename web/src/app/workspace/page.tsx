@@ -83,6 +83,7 @@ function Workspaces() {
             <Button variant="primary" className="w-full" onClick={create} loading={busy} disabled={!sel.length}><Plus className="h-4 w-4" /> Create workspace</Button>
             <ErrorNote>{err}</ErrorNote>
           </Card>
+          <ZeroGPanel />
           <Card>
             <CardHeader title="Your workspaces" />
             <div className="divide-y divide-line">
@@ -99,5 +100,43 @@ function Workspaces() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ZeroGPanel() {
+  const ft = useApi<any>("/api/zerog/ft", [], 15000);
+  if (!ft.data) return <Card><CardHeader title="0G TEE fine-tuning" sub="loading…" /></Card>;
+  const d = ft.data;
+  const funded = (d.funding?.ledger_total_0g || 0) > 0;
+  return (
+    <Card>
+      <CardHeader
+        title="0G TEE fine-tuning"
+        sub={d.enabled
+          ? `Provider ${d.provider ? `${d.provider.slice(0, 8)}…` : "none"} · wallet ${d.funding?.wallet_0g} 0G · ledger ${d.funding?.ledger_total_0g} 0G`
+          : "0G wallet key not configured"}
+        right={d.tasks?.length > 0 ? <Badge tone={d.tasks[0].deliver_index ? "ok" : "warn"}>{d.tasks[0].progress || "queued"}</Badge> : funded ? <Badge>ready</Badge> : <Badge tone="warn">unfunded</Badge>}
+      />
+      <div className="divide-y divide-line">
+        {(d.tasks || []).map((t: any) => (
+          <div key={t.id} className="flex items-center justify-between gap-2 px-5 py-2.5">
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium">task {t.id?.slice(0, 8)}…</div>
+              <div className="text-[11px] text-muted">Qwen2.5-0.5B LoRA · fee {t.fee_0g} 0G · {t.progress}</div>
+            </div>
+            <div className="text-right text-[11px] text-muted">
+              {t.deliver_index ? <Badge tone="ok">deliverable #{t.deliver_index}</Badge> : <Badge>{t.progress || "queued"}</Badge>}
+            </div>
+          </div>
+        ))}
+        {(!d.tasks || d.tasks.length === 0) && (
+          <div className="px-5 py-4 text-xs text-muted">
+            {d.error ? `0G pipeline: ${d.error}` : funded
+              ? "No fine-tuning tasks yet — run backend/scripts/zerog_finetune.py <dataset_id> to train in a TEE."
+              : "Funding: create the 0G compute ledger (3 0G) and fund the provider (1 0G) to train in a TEE. See README → 0G integration."}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

@@ -109,6 +109,13 @@ def config_view():
             "zerog": {"storage": zerog.enabled(), "compute": zerog.compute_status(), "explorer": config.ZEROG_EXPLORER}}
 
 
+@router.get("/zerog/ft")
+def zerog_ft_status():
+    """Live status of the 0G TEE fine-tuning pipeline: funding + provider tasks."""
+    from .. import zerog
+    return zerog.ft_status()
+
+
 @router.get("/stats")
 def stats(db: Session = Depends(get_db)):
     q = db.query
