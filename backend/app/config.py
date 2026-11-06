@@ -104,5 +104,5 @@ WC_MIN_RELAYER_WBT = float(env("WHITECHAIN_MIN_RELAYER_WBT", "0.01"))  # pause r
 
 # ---- Arkiv (Rabdi testnet — decentralised DB-chain for marketplace data) ----
 ARKIV_ACCESS_KEY = env("ARKIV_ACCESS_KEY")
-ARKIV_PRIVATE_KEY = env("ARKIV_PRIVATE_KEY")  # same wallet or a dedicated one
+ARKIV_PRIVATE_KEY = env("ARKIV_PRIVATE_KEY") or WALLET_PRIVATE_KEY  # dedicated wallet, else the backend wallet (needs tGLM)
 ARKIV_RPC_URL = env("ARKIV_RPC_URL", "https://rpc.rabdi.db-chain.testnet.arkiv.network")

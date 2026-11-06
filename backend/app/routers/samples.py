@@ -150,7 +150,7 @@ def assess(sid: str, user: User = Depends(auth.current_user), db: Session = Depe
     db.commit()
     if s.status == "verified":
         from .. import arkiv
-        arkiv.write_sample(s.id, user.address, s.device_id or "", s.media_sha256 or "",
+        arkiv.background(arkiv.write_sample, s.id, user.address, s.device_id or "", s.media_sha256 or "",
                            s.manifest_hash or "", s.storage_root_media or "",
                            s.storage_root_manifest or "", s.quality.get("quality_score", 0),
                            s.status, s.label or "", s.categories or [],

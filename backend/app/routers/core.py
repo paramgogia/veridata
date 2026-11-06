@@ -93,7 +93,7 @@ def update_me(body: ProfileBody, user: User = Depends(auth.current_user), db: Se
     db.commit()
     from .. import arkiv
     sample_count = db.query(Sample).filter(Sample.owner_id == user.id).count()
-    arkiv.write_contributor(user.address, user.name, user.bio, user.roles or [],
+    arkiv.background(arkiv.write_contributor, user.address, user.name, user.bio, user.roles or [],
                             user.reputation or 0.0, sample_count, user.created_at)
     return me_view(db, user)
 

@@ -72,6 +72,21 @@ def _call(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": str(e)}
 
 
+def background(fn, *args, **kwargs) -> None:
+    """Fire-and-forget for API handlers: Arkiv latency or outages never delay a request.
+    The local DB write has already been committed; Arkiv is a best-effort public index."""
+    if not enabled():
+        return
+
+    def run() -> None:
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001
+            log.warning("arkiv background write failed: %s", e)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def create_entity(schema: str, data: dict[str, Any],
                    expiry_days: int | None = None,
                    expiry_date: float | None = None) -> dict[str, Any]:
