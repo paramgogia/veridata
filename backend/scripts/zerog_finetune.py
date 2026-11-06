@@ -121,11 +121,21 @@ def main() -> None:
 
     out_dir = Path(__file__).resolve().parents[1] / "data" / "0g_adapters"
     out_dir.mkdir(exist_ok=True)
-    print("acknowledging model…")
+    print("acknowledging model (downloads the ENCRYPTED artifact)…")
     ft.acknowledge_model(provider, task_id, str(out_dir))
-    adapter = out_dir / f"adapter_{task_id}.safetensors"
-    ft.download_lora_from_tee(provider, task_id, str(adapter))
-    print("adapter saved:", adapter)
+    # Per the official docs: acknowledge-model downloads the model encrypted;
+    # once the task shows "Finished" the provider has settled fees and uploaded
+    # the decryption key to the contract — decrypt-model unwraps the LoRA zip.
+    while True:
+        st = ft.get_task(provider, task_id)
+        if getattr(st, "progress", "") == "Finished":
+            break
+        print(f"  waiting for settlement… ({st.progress})")
+        time.sleep(POLL_SECONDS)
+    enc = out_dir / f"lora_model_{task_id}.zip"
+    dec = out_dir / f"adapter_{task_id}_decrypted.zip"
+    ft.decrypt_model(provider, task_id, str(enc), str(dec))
+    print("adapter decrypted:", dec)
     print(f"\nNext: .venv/bin/python scripts/zerog_deploy_agent.py --task-id {task_id} [--provider {provider}]")
 
 
