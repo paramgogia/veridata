@@ -162,6 +162,34 @@ def verify_dataset(ds_id: int, db: Session = Depends(get_db)):
         results.append({"sample_id": s.id, "valid": v["valid"], "failed": [x["name"] for x in v["steps"] if x["ok"] is False]})
     root, n = provenance.dataset_root(db, d)
     steps = [{"name": "merkle_root", "ok": root == d.content_root, "detail": f"recomputed {root[:20]}… over {n} manifests"}]
+    from .. import zerog
+    if zerog.enabled():
+        # Independent of the platform DB: resolve each manifest from 0G storage by
+        # its root and re-derive the Merkle root from the resolved bytes.
+        leaves_0g: list[str] = []
+        missing = 0
+        for s in samples[:40]:
+            if not s.storage_root_manifest:
+                missing += 1
+                continue
+            try:
+                data = zerog.download_bytes(s.storage_root_manifest)
+                m2 = json.loads(data)
+                if crypto.sha256_hex(crypto.canonical(m2)) == s.manifest_hash:
+                    leaves_0g.append(s.manifest_hash)
+                else:
+                    missing += 1
+            except Exception:
+                missing += 1
+        if leaves_0g and missing == 0:
+            root_0g = crypto.merkle_root(leaves_0g)
+            steps.append({"name": "zerog_root", "ok": root_0g == d.content_root,
+                          "detail": f"Merkle root re-derived from {len(leaves_0g)} manifests resolved from 0G storage: {root_0g[:20]}…"})
+        elif leaves_0g:
+            steps.append({"name": "zerog_root", "ok": None,
+                          "detail": f"{missing}/{len(samples[:40])} manifests have no 0G root (seed/older samples); resolved {len(leaves_0g)}"})
+        else:
+            steps.append({"name": "zerog_root", "ok": None, "detail": "no 0G-stored manifests in this dataset"})
     if d.mode == "onchain" and d.chain_dataset_id:
         try:
             onc = chain.read_dataset(d.chain_dataset_id)

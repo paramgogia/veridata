@@ -305,6 +305,14 @@ function Verify({ samples, update, onNext }: { samples: any[]; update: (id: stri
                   {q.suggested_categories?.length > 0 && <div className="mt-1 text-[11px] text-muted">Suggested: {q.suggested_categories.join(", ")}</div>}
                   {q.rejection_reasons?.length > 0 && <div className="mt-2"><ErrorNote>{q.rejection_reasons.join(" · ")}</ErrorNote></div>}
                   <div className="mt-1 text-[10px] text-faint">engine: {q.engine}{q.model?.request_id ? ` · request ${q.model.request_id}` : ""}</div>
+                  {s.storage_0g?.root_media && (
+                    <div className="mt-1 text-[10px] text-faint">
+                      0G storage · media <span className="hash">{s.storage_0g.root_media.slice(0, 12)}…</span>
+                      {s.storage_0g.root_manifest && (
+                        <> · manifest <a className="link" href={url(s.storage_0g.resolve_url)} target="_blank" rel="noreferrer">{s.storage_0g.root_manifest.slice(0, 12)}…</a></>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </Card>

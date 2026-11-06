@@ -127,7 +127,8 @@ def heuristic_match(description: str, categories: list[str]) -> tuple[float, lis
 def model_assess(data: bytes, description: str, categories: list[str]) -> dict[str, Any] | None:
     # Provider resolution: explicit AI_BASE_URL (OpenAI, Meta, 0G Router, …) wins;
     # otherwise try the 0G compute broker's TEE provider (wallet-settled).
-    cfg: dict[str, str] | None = {"base_url": AI_BASE_URL, "api_key": AI_API_KEY, "model": AI_MODEL, "engine": "explicit"} \
+    cfg: dict[str, str] | None = {"base_url": AI_BASE_URL, "api_key": AI_API_KEY, "model": AI_MODEL,
+                                  "engine": "0g-private-computer" if "0g" in AI_BASE_URL else "explicit"} \
         if (AI_BASE_URL and AI_MODEL) else None
     if cfg is None:
         from . import zerog
@@ -213,7 +214,7 @@ def assess(data: bytes, description: str, categories: list[str], label: str, exi
             privacy["risk"] = "high"
             reasons.append(f"privacy (model): {model.get('privacy_notes', 'flagged')}")
         privacy["model_notes"] = model.get("privacy_notes", "")
-        engine = f"deterministic+model:{model.get('model')}"
+        engine = f"deterministic+model:{model.get('engine') or model.get('model')}"
     if match < 0.4:
         reasons.append("description does not match media/categories")
 
