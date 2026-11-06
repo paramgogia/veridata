@@ -115,6 +115,10 @@ def confirm_request(rid: int, body: ConfirmBody, user: User = Depends(auth.curre
     r.status = "open"
     audit(db, user.address, "request.fund", str(r.id), {"mode": r.mode, "tx": body.tx_hash, "amount": total})
     db.commit()
+    from .. import arkiv
+    arkiv.write_request(r.id, user.address, r.title, r.category, r.quantity, r.accepted,
+                        r.price_per_sample, r.status, r.spec or {}, r.spec_hash,
+                        r.chain_request_id, r.fund_tx, r.mode, r.deadline, r.created_at)
     return request_view(db, r)
 
 

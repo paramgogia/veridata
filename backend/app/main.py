@@ -44,6 +44,11 @@ for r in (core, devices, samples, market, requests, training, whitechain):
 @app.on_event("startup")
 def _startup():
     init_db()
+    # Warm the 0G fine-tuning status cache in the background so the first
+    # dashboard request doesn't wait on the (flaky) 0G RPC.
+    import threading
+    from . import zerog
+    threading.Thread(target=zerog.ft_status, daemon=True).start()
 
 
 @app.get("/api/health")

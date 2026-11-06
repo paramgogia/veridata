@@ -68,6 +68,10 @@ async def create_device(body: DeviceCreate, request: Request, user: User = Depen
     db.add(dev)
     audit(db, user.address, "device.register", dev_id, {"signing_mode": dev.signing_mode, "simulated": dev.simulated}, auth.client_ip(request))
     db.commit()
+    from .. import arkiv
+    arkiv.write_device(dev.id, user.address, dev.name, "simulated" if dev.simulated else dev.kind,
+                       dev.pubkey_hex, dev.signing_mode, dev.registration_tx, dev.registration_mode,
+                       dev.status, dev.created_at)
     return device_view(dev) | {"chain_device_id": chain_device_id(dev.id)}
 
 

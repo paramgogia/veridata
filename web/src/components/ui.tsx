@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 export const cx = clsx;
 
 // ---------- data hook ----------
-export function useApi<T = any>(path: string | null, deps: unknown[] = []) {
+export function useApi<T = any>(path: string | null, deps: unknown[] = [], interval?: number) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!path);
@@ -30,6 +30,12 @@ export function useApi<T = any>(path: string | null, deps: unknown[] = []) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, ...deps]);
+  useEffect(() => {
+    if (!interval) return;
+    const t = setInterval(load, interval);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, interval]);
   useEffect(() => {
     alive.current = true;
     load();

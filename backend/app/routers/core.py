@@ -91,6 +91,10 @@ def update_me(body: ProfileBody, user: User = Depends(auth.current_user), db: Se
     if body.roles is not None:
         user.roles = [r for r in body.roles if r in ("contributor", "buyer")] or ["contributor"]
     db.commit()
+    from .. import arkiv
+    sample_count = db.query(Sample).filter(Sample.owner_id == user.id).count()
+    arkiv.write_contributor(user.address, user.name, user.bio, user.roles or [],
+                            user.reputation or 0.0, sample_count, user.created_at)
     return me_view(db, user)
 
 
@@ -103,10 +107,18 @@ def faucet(user: User = Depends(auth.current_user), db: Session = Depends(get_db
 
 @router.get("/config")
 def config_view():
-    from .. import zerog
+    from .. import zerog, arkiv
     return {"chain": chain.status(), "chainId": CHAIN_ID, "explorer": EXPLORER_URL, "uploadFee": UPLOAD_FEE,
             "platformFeeBps": PLATFORM_FEE_BPS, "units": "gwei",
-            "zerog": {"storage": zerog.enabled(), "compute": zerog.compute_status(), "explorer": config.ZEROG_EXPLORER}}
+            "zerog": {"storage": zerog.enabled(), "compute": zerog.compute_status(), "explorer": config.ZEROG_EXPLORER},
+            "arkiv": {"enabled": arkiv.enabled(), "rpc": config.ARKIV_RPC_URL}}
+
+
+@router.get("/zerog/ft")
+def zerog_ft_status():
+    """Live status of the 0G TEE fine-tuning pipeline: funding + provider tasks."""
+    from .. import zerog
+    return zerog.ft_status()
 
 
 @router.get("/stats")

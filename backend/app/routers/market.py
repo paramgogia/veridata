@@ -154,6 +154,11 @@ def confirm_publish(ds_id: int, body: ConfirmBody, user: User = Depends(auth.cur
         s.status = "published"
     audit(db, user.address, "dataset.publish", str(d.id), {"mode": d.mode, "tx": body.tx_hash})
     db.commit()
+    from .. import arkiv
+    arkiv.write_dataset(d.id, user.address, d.title, d.categories or [],
+                        d.sensor_types or [], d.location or "", d.quality_score,
+                        d.sample_count, d.price, d.content_root,
+                        d.chain_dataset_id, d.publish_tx, d.mode, d.status, d.created_at)
     return dataset_view(db, d)
 
 

@@ -101,3 +101,8 @@ WC_GAS_LIMIT = int(env("WHITECHAIN_GAS_LIMIT", "250000"))           # hard per-t
 WC_DAILY_TX_CAP = int(env("WHITECHAIN_DAILY_TX_CAP", "200"))        # relayed purchases per day
 WC_PER_BUYER_HOURLY = int(env("WHITECHAIN_PER_BUYER_HOURLY", "10")) # relayed purchases per buyer per hour
 WC_MIN_RELAYER_WBT = float(env("WHITECHAIN_MIN_RELAYER_WBT", "0.01"))  # pause relaying below this balance
+
+# ---- Arkiv (Rabdi testnet — decentralised DB-chain for marketplace data) ----
+ARKIV_ACCESS_KEY = env("ARKIV_ACCESS_KEY")
+ARKIV_PRIVATE_KEY = env("ARKIV_PRIVATE_KEY")  # same wallet or a dedicated one
+ARKIV_RPC_URL = env("ARKIV_RPC_URL", "https://rpc.rabdi.db-chain.testnet.arkiv.network")

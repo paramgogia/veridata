@@ -58,6 +58,39 @@ With `WALLET_PRIVATE_KEY` (or the legacy `VERIFIER_PRIVATE_KEY`) in `.env`:
 
 Seed data never touches 0G (labelled `demo-seed`); only live captures do.
 
+## Arkiv Integration (Decentralized DB-Chain on Rabdi Testnet)
+
+VeriData replaces centralized relational databases (PostgreSQL/SQLite) for public marketplace data with **Arkiv DB-Chain**. Every buyer request, published dataset, capture device, and signed sample manifest is indexed on Arkiv and queryable via SQL-like filters.
+
+* **Network:** Arkiv Testnet (Rabdi) · Chain ID `7794095`
+* **Public RPC:** `https://rpc.rabdi.db-chain.testnet.arkiv.network`
+* **Explorer:** `https://rabdi.explorer.arkiv.network`
+* **Writing Entity Wallet:** `0x399A27F3841D6B82813589B7b5E731737eBdb091`
+
+### Example Arkiv Queries (Run with `@arkiv-network/sdk` or JSON-RPC)
+
+Query all open data bounties under the `veridata.request` schema with active TTLs:
+```sql
+arkiv.schema = str('veridata.request') AND status = str('open') AND category = str('agriculture')
+```
+
+Query camera-based datasets with high AI quality scores:
+```sql
+arkiv.schema = str('veridata.dataset') AND status = str('listed') AND sensor_types = str('camera') AND quality_score >= dec('85')
+```
+
+### Required Arkiv Documentation & Judging Criteria
+* **Schema Definition:** [/arkiv/schema.md](arkiv/schema.md) — 7 entity schemas, indexed fields, wallet ownership, and custom TTL configurations.
+* **Developer Friction:** [/arkiv/friction.md](arkiv/friction.md) — Honest feedback on building with `@arkiv-network/sdk` and testnet infrastructure.
+* **Reach & Market:** [/arkiv/reach.md](arkiv/reach.md) — Target audiences, live testnet deployment, and post-hackathon roadmap.
+* **Why Arkiv:** [/arkiv/why-arkiv.md](arkiv/why-arkiv.md) — What users lose if we used PostgreSQL instead of Arkiv, and what we deliberately kept off-chain.
+* **How We Use Arkiv:** [/arkiv/how-you-use-arkiv.md](arkiv/how-you-use-arkiv.md) — Mapping UI dropdowns/sliders to indexed fields, access control matrix, and user-visible TTL expiration.
+
+### AI Usage Disclosure (ETHGlobal Compliance)
+In accordance with ETHGlobal hackathon rules: Claude Opus and Gemini 3.8 Flash were utilized as agentic pair-programming assistants to scaffold schema definitions, write integration glue code between FastAPI and Arkiv's TypeScript SDK, and document architectural friction points.
+
+---
+
 ## On-chain mode (Remix + Sepolia)
 
 1. Open `contracts/Veridata.sol` in [Remix](https://remix.ethereum.org). Compile with Solidity 0.8.24+; the optimizer is recommended.
