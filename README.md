@@ -140,7 +140,7 @@ The backend verifies each user transaction's receipt and decoded event, checking
 | Network | Whitechain Sepolia, chain 1874 |
 | VeridataPay (verified) | [`0x997E7f5B2e1Ea27290a5705F39F1A2e468483FBC`](https://explorer.testnet.whitechain.io/address/0x997E7f5B2e1Ea27290a5705F39F1A2e468483FBC) |
 | USDT | [`0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`](https://explorer.testnet.whitechain.io/token/0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7) |
-| Example USDT payment | `TODO_TX` |
+| Example USDT payment | [`0x7937bd2f27313d57…`](https://explorer.testnet.whitechain.io/tx/0x7937bd2f27313d571f64542c25c714e5d82b5103802a7cc54091a4173320d066) |
 
 Feedback on building with Whitechain: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
 
