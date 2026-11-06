@@ -5,12 +5,25 @@
  *
  * Usage: echo '{"op":"create","schema":"request","data":{...},"expiry_days":7}' | node writer.mjs
  */
-import { createWalletClient, ExpirationTime } from "@arkiv-network/sdk";
-import { dec } from "@arkiv-network/sdk/schema";
+import { createWalletClient, ExpirationTime, addr, dec } from "@arkiv-network/sdk";
 import { rabdi } from "@arkiv-network/sdk/chains";
 import { http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import * as schemas from "./schemas.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(__dirname, "../../.env");
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+    const [k, ...v] = trimmed.split("=");
+    if (!process.env[k.trim()]) process.env[k.trim()] = v.join("=").trim();
+  }
+}
 
 const SCHEMA_MAP = {
   contributor: schemas.Contributor,
@@ -50,22 +63,35 @@ async function main() {
     process.exit(0);
   }
 
-  // Convert numeric fields to dec() values
+  // Convert fields according to schema column types
   const converted = {};
   for (const [k, v] of Object.entries(data)) {
-    converted[k] = typeof v === "number" ? dec(String(v)) : v;
+    const col = schemaObj.columns?.[k];
+    const colType = col?.type;
+    if (colType === "addr") {
+      converted[k] = addr(String(v || "0x0000000000000000000000000000000000000000").toLowerCase());
+    } else if (colType === "dec") {
+      converted[k] = dec(String(v ?? 0));
+    } else if (colType === "str") {
+      // Arkiv str column max is 128 bytes
+      converted[k] = String(v ?? "").slice(0, 128);
+    } else {
+      converted[k] = typeof v === "number" ? dec(String(v)) : v;
+    }
   }
 
-  let expires;
+  let expiration;
   if (expiry_date) {
-    expires = ExpirationTime.atDate(new Date(expiry_date * 1000));
+    expiration = ExpirationTime.atDate(new Date(expiry_date * 1000));
+  } else if (expiry_days && expiry_days <= 180) {
+    expiration = ExpirationTime.fromDays(expiry_days);
   } else {
-    expires = ExpirationTime.fromDays(expiry_days || 3650);
+    expiration = ExpirationTime.max();
   }
 
   try {
     if (op === "create") {
-      const result = await client.createEntity(schemaObj, converted, { expires });
+      const result = await client.createEntity(schemaObj, converted, { expiration });
       console.log(JSON.stringify({ ok: true, entityKey: result.entityKey, txHash: result.txHash }));
     } else if (op === "patch") {
       if (!entity_key) {

@@ -136,7 +136,7 @@ export async function queryRequests(filters: {
 
   try {
     const result = await arkivClient.query(parts.join(" AND "), {
-      select: { key: true, attributes: true, owner: true },
+      select: "*",
       limit: 100,
     });
     return (result.entities || []).map(entityToRequest);
@@ -163,7 +163,7 @@ export async function queryDatasets(filters: {
 
   try {
     const result = await arkivClient.query(parts.join(" AND "), {
-      select: { key: true, attributes: true, owner: true },
+      select: "*",
       limit: 100,
     });
     return (result.entities || []).map(entityToDataset);
@@ -180,11 +180,11 @@ export async function queryDevices(filters: {
 }): Promise<any[]> {
   const parts = ["arkiv.schema = str('veridata.device')"];
   if (filters.status) parts.push(`status = str('${filters.status}')`);
-  if (filters.owner) parts.push(`owner_wallet = addr('${filters.owner}')`);
+  if (filters.owner) parts.push(`owner_wallet = addr(${filters.owner.toLowerCase()})`);
 
   try {
     const result = await arkivClient.query(parts.join(" AND "), {
-      select: { key: true, attributes: true, owner: true },
+      select: "*",
       limit: 100,
     });
     return (result.entities || []).map(entityToDevice);
@@ -198,8 +198,8 @@ export async function queryDevices(filters: {
 export async function queryContributor(wallet: string): Promise<any | null> {
   try {
     const result = await arkivClient.query(
-      `arkiv.schema = str('veridata.contributor') AND wallet = addr('${wallet}')`,
-      { select: { key: true, attributes: true, owner: true }, limit: 1 },
+      `arkiv.schema = str('veridata.contributor') AND wallet = addr(${wallet.toLowerCase()})`,
+      { select: "*", limit: 1 },
     );
     const entities = result.entities || [];
     return entities.length > 0 ? entityToContributor(entities[0]) : null;
@@ -221,14 +221,15 @@ function numVal(attr: any): number {
 }
 
 function entityToRequest(e: any): any {
-  const a = e.attributes || {};
+  const a = e.$attributes || e.attributes || {};
   const total = numVal(a.total_escrow);
   const accepted = numVal(a.accepted);
   const quantity = numVal(a.quantity);
   const pps = numVal(a.price_per_sample);
   const remaining = total - (accepted * pps);
-  const deadline = e.$expiresAt ? new Date(e.$expiresAt).getTime() / 1000 : 0;
+  const deadline = e.$expiresAt ? Number(e.$expiresAt) : 0;
   const daysLeft = deadline ? Math.max(0, (deadline - Date.now() / 1000) / 86400) : 0;
+  const buyerWallet = val(a.buyer_wallet) || e.$owner || e.owner || "";
   return {
     id: numVal(a.request_id),
     title: val(a.title),
@@ -244,13 +245,14 @@ function entityToRequest(e: any): any {
     progress: quantity > 0 ? accepted / quantity : 0,
     created_at: numVal(a.created_at),
     fund_tx: val(a.fund_tx),
-    buyer: { address: val(a.buyer_wallet), name: val(a.buyer_wallet).slice(0, 10) + "…" },
+    buyer: { address: buyerWallet, name: buyerWallet.slice(0, 10) + "…" },
     _source: "arkiv",
   };
 }
 
 function entityToDataset(e: any): any {
-  const a = e.attributes || {};
+  const a = e.$attributes || e.attributes || {};
+  const ownerWallet = val(a.owner_wallet) || e.$owner || e.owner || "";
   return {
     id: numVal(a.dataset_id),
     title: val(a.title),
@@ -264,13 +266,13 @@ function entityToDataset(e: any): any {
     mode: val(a.mode),
     status: val(a.status),
     created_at: numVal(a.created_at),
-    owner: { address: val(a.owner_wallet), name: val(a.owner_wallet).slice(0, 10) + "…" },
+    owner: { address: ownerWallet, name: ownerWallet.slice(0, 10) + "…" },
     _source: "arkiv",
   };
 }
 
 function entityToDevice(e: any): any {
-  const a = e.attributes || {};
+  const a = e.$attributes || e.attributes || {};
   return {
     id: val(a.device_id),
     name: val(a.name),
@@ -287,9 +289,10 @@ function entityToDevice(e: any): any {
 }
 
 function entityToContributor(e: any): any {
-  const a = e.attributes || {};
+  const a = e.$attributes || e.attributes || {};
+  const walletAddr = val(a.wallet) || e.$owner || e.owner || "";
   return {
-    address: val(a.wallet),
+    address: walletAddr,
     name: val(a.name),
     bio: val(a.bio),
     roles: val(a.roles) ? val(a.roles).split(",") : [],
