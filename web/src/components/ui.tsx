@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "@/lib/api";
 
 export const cx = clsx;
@@ -285,7 +286,9 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
   if (!open) return null;
-  return (
+  // Portaled to <body>: the modal is often mounted inside the sticky header, whose
+  // backdrop-filter turns it into the containing block for `fixed` descendants.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-[8vh] backdrop-blur-[2px]" onMouseDown={onClose}>
       <div className={cx("card w-full animate-in shadow-2xl", wide ? "max-w-3xl" : "max-w-lg")} onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
@@ -296,6 +299,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
