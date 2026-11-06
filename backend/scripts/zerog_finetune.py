@@ -25,7 +25,10 @@ from app import config, zerog  # noqa: E402
 from app.db import Dataset, Sample, SessionLocal  # noqa: E402
 
 BASE_MODEL = "Qwen2.5-0.5B-Instruct"
-DEFAULT_TRAINING_PARAMS = {"num_epochs": 3, "learning_rate": 0.0001, "lora_r": 16, "lora_alpha": 32, "batch_size": 4}
+# Schema learned from the Galileo testnet provider's validator:
+# only these keys are allowed and neftune_noise_alpha is required.
+DEFAULT_TRAINING_PARAMS = {"neftune_noise_alpha": 5.0, "num_train_epochs": 3,
+                           "per_device_train_batch_size": 4, "learning_rate": 0.0001, "max_steps": 20}
 POLL_SECONDS = 30
 
 
@@ -90,7 +93,7 @@ def main() -> None:
     print("uploading dataset to the provider's TEE…")
     up = ft.upload_dataset_to_tee(provider, str(data))
     print("upload response:", json.dumps(up)[:300])
-    dataset_hash = up.get("dataset_hash") or up.get("hash") or up.get("root") or up.get("id")
+    dataset_hash = up.get("datasetHash") or up.get("dataset_hash") or up.get("hash") or up.get("root") or up.get("id")
     if not dataset_hash:
         raise SystemExit(f"could not find the dataset hash in the provider response: {list(up)}")
 
