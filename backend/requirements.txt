@@ -12,3 +12,4 @@ torch>=2.2
 torchvision>=0.17
 zg-storage>=0.2
 0g-inference-sdk>=0.9
+eciespy>=0.4
