@@ -37,6 +37,27 @@ Sign in with a **demo persona** (Asha Farms = contributor, Northwind Robotics = 
 
 The demo contributor owns a **simulated** device (labelled SIMULATED), so you can run the full capture workflow without hardware.
 
+## 0G integration (Galileo testnet)
+
+With `WALLET_PRIVATE_KEY` (or the legacy `VERIFIER_PRIVATE_KEY`) in `.env`:
+
+- **Storage** — every live capture is encrypted (AES-256-GCM, unchanged), the ciphertext is
+  uploaded to 0G Storage through the Galileo indexer, and the root hash lands **inside the
+  signed manifest's media block**; the canonical manifest is uploaded too. `GET /api/zerog/manifest/{root}`
+  resolves any manifest by root, and the Proof Card's verify adds a `zerog_root` step that
+  re-derives the dataset Merkle root from 0G-resolved manifests, independent of the platform DB.
+- **Compute** — the quality VLM runs against any OpenAI-compatible endpoint
+  (`AI_BASE_URL`/`AI_API_KEY`/`AI_MODEL`), e.g. the 0G Private Computer router
+  (`https://router-api.0g.ai/v1`); request IDs are stored with each assessment and shown in the UI.
+  With no explicit endpoint and >= 3 0G in the wallet, the backend auto-resolves a TEE provider
+  through the 0G compute broker. Otherwise the deterministic+keyword heuristic is used and labelled.
+- **Fine-tuning** — `backend/scripts/zerog_finetune.py` exports a licensed dataset, fine-tunes
+  inside a 0G TEE provider and deploys the adapter as a served agent (needs the 3 0G ledger).
+- **Deploy** — `backend/scripts/deploy_contract.py` compiles-deploys `contracts/Veridata.sol`
+  from the wallet in `.env` and patches `VERIDATA_CONTRACT_ADDRESS` on success.
+
+Seed data never touches 0G (labelled `demo-seed`); only live captures do.
+
 ## On-chain mode (Remix + Sepolia)
 
 1. Open `contracts/Veridata.sol` in [Remix](https://remix.ethereum.org). Compile with Solidity 0.8.24+; the optimizer is recommended.
