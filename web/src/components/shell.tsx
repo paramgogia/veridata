@@ -1,7 +1,7 @@
 "use client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
-  Boxes, Cpu, FlaskConical, Gauge, LayoutGrid, LogOut, Menu, Radar, ShieldCheck, Upload, User, Wallet, X,
+  Boxes, Cpu, FlaskConical, Gauge, LayoutGrid, LogOut, Menu, Radar, ShieldCheck, Upload, User, Wallet, X, Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,6 +32,7 @@ const NAV = [
   { href: "/devices", label: "Devices", icon: Cpu },
   { href: "/workspace", label: "Training Room", icon: FlaskConical },
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
+  { href: "/payments", label: "USDT Payments", icon: Zap },
   { href: "/demo/insurance", label: "Tamper demo", icon: ShieldCheck },
 ];
 

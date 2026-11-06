@@ -9,11 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .db import init_db
-from .routers import core, devices, market, requests, samples, training
+from .routers import core, devices, market, requests, samples, training, whitechain
 
 app = FastAPI(title="Veridata API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_methods=["*"], allow_headers=["*"], expose_headers=["X-PAYMENT-RESPONSE"])
 
 # Simple sliding-window rate limit per IP (in-memory; use a shared store in production).
 _hits: dict[str, deque] = defaultdict(deque)
@@ -37,7 +37,7 @@ async def rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
-for r in (core, devices, samples, market, requests, training):
+for r in (core, devices, samples, market, requests, training, whitechain):
     app.include_router(r.router)
 
 

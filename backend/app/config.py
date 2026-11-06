@@ -82,3 +82,22 @@ EXPLORER_URL = env("EXPLORER_URL", "https://sepolia.etherscan.io")
 GWEI = 10**9
 UPLOAD_FEE = int(env("UPLOAD_FEE_GWEI", "100000"))  # 0.0001 ETH, must match the contract
 PLATFORM_FEE_BPS = int(env("PLATFORM_FEE_BPS", "500"))
+
+# ---- Whitechain Sepolia (chain 1874): gasless USDT license checkout (VeridataPay.sol) ----
+WC_CHAIN_ID = int(env("WHITECHAIN_CHAIN_ID", "1874"))
+WC_RPC_URL = env("WHITECHAIN_RPC_URL", "https://rpc.testnet.whitechain.io")
+WC_EXPLORER = env("WHITECHAIN_EXPLORER", "https://explorer.testnet.whitechain.io")
+WC_PAY_ADDRESS = env("WHITECHAIN_PAY_ADDRESS")  # VeridataPay deployed from Remix
+WC_USDT = env("WHITECHAIN_USDT", "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7")  # prize-qualifying USDT (6 dp)
+WC_USDT_NAME = env("WHITECHAIN_USDT_NAME", "Tether USD")  # EIP-712 domain, verified against DOMAIN_SEPARATOR
+WC_USDT_VERSION = env("WHITECHAIN_USDT_VERSION", "1")
+# Relayer: pays WBT gas for buyers. Defaults to the backend wallet already used for 0G.
+WC_RELAYER_KEY = env("WHITECHAIN_RELAYER_KEY") or WALLET_PRIVATE_KEY
+# Price conversion for datasets priced in gwei: USDT per 1 ETH of list price.
+WC_USDT_PER_ETH = float(env("WHITECHAIN_USDT_PER_ETH", "100"))
+# Drain protection
+WC_MAX_GAS_GWEI = float(env("WHITECHAIN_MAX_GAS_GWEI", "50"))      # refuse if gas price spikes above this
+WC_GAS_LIMIT = int(env("WHITECHAIN_GAS_LIMIT", "250000"))           # hard per-tx gas cap
+WC_DAILY_TX_CAP = int(env("WHITECHAIN_DAILY_TX_CAP", "200"))        # relayed purchases per day
+WC_PER_BUYER_HOURLY = int(env("WHITECHAIN_PER_BUYER_HOURLY", "10")) # relayed purchases per buyer per hour
+WC_MIN_RELAYER_WBT = float(env("WHITECHAIN_MIN_RELAYER_WBT", "0.01"))  # pause relaying below this balance

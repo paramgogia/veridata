@@ -81,6 +81,36 @@ What settles on-chain:
 
 The backend verifies each user transaction's receipt and decoded event, checking that the sender, content root, spec hash, amount and paid sample hashes match, before it records anything.
 
+## Whitechain: gasless USDT checkout for people and AI agents (Scale track)
+
+**Why this needs on-chain stablecoins:** an AI training agent has to buy a dataset license per request, by itself, at 2 a.m., with no merchant account, card or invoice. A signed USDT authorization settles in seconds, and the license is enforced by the contract, not by our database.
+
+**Flow (zero crypto steps for the payer):**
+1. The agent (or the website) calls `GET /api/x402/datasets/{id}/license` and gets **HTTP 402** with the price in USDT and an EIP-3009 nonce.
+2. The payer signs one `ReceiveWithAuthorization` (an EIP-712 message: no gas, no WBT, no approve).
+3. It retries with `X-PAYMENT`. Our **relayer** (`backend/app/chain/whitechain.py`) submits `VeridataPay.purchase()` and pays the WBT gas. The contract pulls the USDT and splits seller 95% / treasury 5% **in the same transaction**, records `hasLicense`, and emits `LicensePurchased`.
+4. The payer receives the license and an access token, then pulls the signed capture manifests it paid for.
+
+`backend/scripts/x402_agent.py` is the agent; the dataset page's "Pay … USDT on Whitechain · no gas" button uses the same endpoint. `/payments` is the business view (volume, seller payouts, fees, gas spent, relayer runway, every payment with explorer links).
+
+**Why it's safe (no trust in the relayer):** the nonce the buyer signs is `keccak256(chainId, VeridataPay, datasetId, seller, salt)`, so a submitter cannot redirect funds to another seller or dataset. `receiveWithAuthorization` requires `to == msg.sender`, so the signature cannot be front-run into a plain transfer. The contract holds no balance between calls and has no admin.
+
+**Who pays gas and why it can't be drained:**
+- The relayer wallet pays WBT. It is funded from the faucet on testnet; in production it is topped up from the 5% USDT fee (about 0.0006 WBT per purchase at 5 gwei, so 2 WBT covers about 3,000 purchases).
+- It relays only `VeridataPay.purchase`, and only when the amount equals the listed price.
+- It verifies the signature off-chain, checks USDT balance and nonce, and simulates the call first, so forged or failing requests cost nothing.
+- Caps: gas price (`WHITECHAIN_MAX_GAS_GWEI`), gas limit per tx, payments per day (`WHITECHAIN_DAILY_TX_CAP`) and per wallet per hour, plus per-IP rate limits.
+- It pauses automatically below a minimum WBT balance.
+
+| | |
+|---|---|
+| Network | Whitechain Sepolia, chain 1874 |
+| VeridataPay (verified) | [`0x997E7f5B2e1Ea27290a5705F39F1A2e468483FBC`](https://explorer.testnet.whitechain.io/address/0x997E7f5B2e1Ea27290a5705F39F1A2e468483FBC) |
+| USDT | [`0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`](https://explorer.testnet.whitechain.io/token/0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7) |
+| Example USDT payment | `TODO_TX` |
+
+Feedback on building with Whitechain: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBACK.md).
+
 ## Hardware
 
 See [docs/HARDWARE.md](docs/HARDWARE.md). In short: flash the stock **CameraWebServer** to the ESP32-CAM and `firmware/veridata_main` to the main ESP32. Then register a *hardware* device with the CAM and board URLs. If the board answers `/pubkey`, manifests are signed **on the ESP32** (`device-hardware`). Otherwise the platform generates a clearly labelled **dev-software** key.

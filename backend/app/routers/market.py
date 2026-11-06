@@ -52,6 +52,13 @@ def search(db: Session = Depends(get_db), q: str = "", category: str = "", senso
     return [dataset_view(db, d) for d in out[:limit]]
 
 
+def _lic_url(lic: License) -> str:
+    if lic.mode == "whitechain":
+        from ..chain import whitechain
+        return whitechain.explorer_tx(lic.tx_hash)
+    return chain.explorer_tx(lic.tx_hash)
+
+
 @router.get("/datasets/{ds_id}")
 def detail(ds_id: int, db: Session = Depends(get_db), user: User | None = Depends(auth.optional_user)):
     d = db.get(Dataset, ds_id)
@@ -60,7 +67,7 @@ def detail(ds_id: int, db: Session = Depends(get_db), user: User | None = Depend
     v = dataset_view(db, d, detail=True)
     lic = db.query(License).filter(License.dataset_id == ds_id, License.buyer_id == user.id).first() if user else None
     v["licensed"] = bool(lic) or (user is not None and user.id == d.owner_id)
-    v["license_record"] = {"tx_hash": lic.tx_hash, "mode": lic.mode, "via": lic.via, "tx_url": chain.explorer_tx(lic.tx_hash)} if lic else None
+    v["license_record"] = {"tx_hash": lic.tx_hash, "mode": lic.mode, "via": lic.via, "tx_url": _lic_url(lic)} if lic else None
     v["buyers"] = db.query(License).filter(License.dataset_id == ds_id).count()
     return v
 

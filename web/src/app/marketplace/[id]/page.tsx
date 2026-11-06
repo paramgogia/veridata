@@ -1,5 +1,5 @@
 "use client";
-import { Cpu, FlaskConical, Lock, MapPin, ShieldAlert, ShoppingCart, Tag } from "lucide-react";
+import { Cpu, FlaskConical, Lock, MapPin, ShieldAlert, ShoppingCart, Tag, Zap } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -7,6 +7,7 @@ import { ProofCard, TxLink, useSettlement } from "@/components/domain";
 import { Badge, Button, Card, CardHeader, Empty, ErrorNote, KV, ModeBadge, Note, Skeleton, useApi } from "@/components/ui";
 import { API_BASE, api, getToken, url } from "@/lib/api";
 import { sendVeridata, txErr } from "@/lib/chain";
+import { payWithUsdt } from "@/lib/whitechain";
 import { day, eth, num, toWei } from "@/lib/format";
 import { useSession } from "@/lib/session";
 
@@ -18,6 +19,8 @@ export default function DatasetDetail() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [rawMsg, setRawMsg] = useState<string | null>(null);
+  const { data: wcPrice } = useApi<any>(`/api/whitechain/price/${id}`, [id]);
+  const [wcTx, setWcTx] = useState<any>(null);
 
   if (loading && !d) return <Skeleton className="h-[600px]" />;
   if (error || !d) return <Empty title="Dataset not found" sub={error || ""} />;
@@ -33,6 +36,20 @@ export default function DatasetDetail() {
       } else {
         await api(`/api/datasets/${d.id}/purchase`, { method: "POST", json: {} });
       }
+      await Promise.all([reload(), refresh()]);
+    } catch (e: any) {
+      setErr(txErr(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const buyUsdt = async () => {
+    setErr(null);
+    setBusy("usdt");
+    try {
+      const r = await payWithUsdt(d.id);
+      setWcTx(r.payment);
       await Promise.all([reload(), refresh()]);
     } catch (e: any) {
       setErr(txErr(e));
@@ -132,6 +149,10 @@ export default function DatasetDetail() {
               {d.licensed ? (
                 <>
                   <Badge tone="ok">{own ? "You own this dataset" : "Licensed"}</Badge>
+                  {wcTx && (
+                    <Note tone="chain">Paid {wcTx.usdt} USDT, gas {(wcTx.gas_cost_wei / 1e18).toFixed(6)} WBT covered by Veridata.{" "}
+                      <a className="text-chain hover:underline" href={wcTx.explorer} target="_blank" rel="noreferrer">View on Whitechain explorer</a></Note>
+                  )}
                   {d.license_record && (
                     <div className="text-xs text-muted">
                       <TxLink hash={d.license_record.tx_hash} urlStr={d.license_record.tx_url} mode={d.license_record.mode} />
@@ -150,6 +171,16 @@ export default function DatasetDetail() {
                     <ShoppingCart className="h-4 w-4" /> {mode === "onchain" ? "Buy license on Sepolia" : "Buy with demo ledger"}
                   </Button>
                   {mode === "onchain" && d.mode !== "onchain" && <Note tone="warn">This is a demo-seed listing, not on-chain. Use the demo ledger or publish your own dataset on Sepolia.</Note>}
+                  {wcPrice?.enabled && (
+                    <div className="space-y-1.5 border-t border-line pt-3">
+                      <Button variant="chain" className="w-full" onClick={buyUsdt} loading={busy === "usdt"}>
+                        <Zap className="h-4 w-4" /> Pay {wcPrice.usdt} USDT on Whitechain · no gas
+                      </Button>
+                      <p className="text-[11px] leading-relaxed text-faint">
+                        You sign one message (EIP-3009); Veridata&apos;s relayer pays the gas. Same x402 endpoint AI agents use. You need USDT only, no WBT.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
               <ErrorNote>{err}</ErrorNote>
