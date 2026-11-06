@@ -12,9 +12,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
-from app import config
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
+from app import config  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 ABI_PATH = REPO / "contracts" / "Veridata.abi.json"
