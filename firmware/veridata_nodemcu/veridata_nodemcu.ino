@@ -10,7 +10,7 @@
     IR OUT      -> D2 (GPIO4), active-LOW = object, VCC 3V3
     RC522 SDA   -> D8 (GPIO15)   SCK -> D5   MOSI -> D7   MISO -> D6
           RST   -> 3V3 (tied high; firmware does a soft reset)   3.3V only
-    DHT DATA    -> D4 (GPIO2), + -> 3V3, - -> GND
+    DHT DATA    -> D1 (GPIO5), + -> 3V3, - -> GND  (bare 4-pin DHT: 10k from DATA to 3V3)
     LED         -> GPIO16 (on-board, active-LOW), blinks on every HTTP request
     ESP32-CAM   -> power only (runs CameraWebServer separately)
 
@@ -42,11 +42,11 @@
 #define WIFI_PASSWORD "YOUR_PASSWORD"
 #endif
 // --------------------------------
-#define FW_VERSION "veridata-nodemcu-0.1.0"
+#define FW_VERSION "veridata-nodemcu-0.2.0"
 
 #define PIN_IR    4    // D2
 #define PIN_SS    15   // D8
-#define PIN_DHT   2    // D4
+#define PIN_DHT   5    // D1 (not a boot pin, unlike D4)
 #define PIN_LED   16   // D0, active-LOW
 #define IR_ACTIVE_LOW 1
 
@@ -170,6 +170,8 @@ void setup() {
   dht22.begin();
   dht11.begin();
 
+  WiFi.persistent(false);                       // never rewrite Wi-Fi config in flash
+  WiFi.setAutoReconnect(true);                  // rejoin the hotspot by itself if it drops
   WiFi.mode(WIFI_STA);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);           // faster HTTP responses
   WiFi.disconnect();
@@ -204,6 +206,7 @@ void setup() {
       t0 = millis();
     }
   }
+  Serial.println("==== READY ====");
   Serial.print("IP: "); Serial.println(WiFi.localIP());
   Serial.println("Open http://" + WiFi.localIP().toString() + "/sensors");
 
