@@ -90,12 +90,21 @@ def store_media(media: bytes, aad: str) -> dict[str, Any]:
 
 # ---------------- compute (TEE inference via the 0G broker) ----------------
 
-def wallet_balance_0g() -> int:
+def wallet_balance_0g(network: str = "testnet") -> int:
     from web3 import Web3
     from eth_account import Account
-    w3 = Web3(Web3.HTTPProvider(config.ZEROG_RPC_URL, request_kwargs={"timeout": 15}))
+    import zerog_py_sdk as z
+    rpc = config.ZEROG_RPC_URL if network == "testnet" else z.get_rpc_url("mainnet")
+    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 15}))
     acct = Account.from_key(config.WALLET_PRIVATE_KEY)
     return w3.eth.get_balance(acct.address)
+
+
+def broker(network: str = "testnet"):
+    """0G compute broker for the given network (contract addresses are built into the SDK)."""
+    import zerog_py_sdk as z
+    rpc = config.ZEROG_RPC_URL if network == "testnet" else z.get_rpc_url("mainnet")
+    return z.create_broker(config.WALLET_PRIVATE_KEY, network=network, rpc_url=rpc)
 
 
 def compute_status() -> dict[str, Any]:

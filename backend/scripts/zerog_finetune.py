@@ -44,10 +44,10 @@ def export_jsonl(dataset_id: int) -> Path:
     return out
 
 
-def require_funding(broker) -> None:
-    bal = zerog.wallet_balance_0g()
+def require_funding(broker, network: str) -> None:
+    bal = zerog.wallet_balance_0g(network)
     if bal < zerog.MIN_COMPUTE_LEDGER_0G * 10**18:
-        raise SystemExit(f"wallet holds {bal / 1e18:.2f} 0G; the compute ledger needs >= {zerog.MIN_COMPUTE_LEDGER_0G} 0G")
+        raise SystemExit(f"wallet holds {bal / 1e18:.2f} 0G on {network}; the compute ledger needs >= {zerog.MIN_COMPUTE_LEDGER_0G} 0G")
     try:
         detail = broker.ledger.get_ledger_with_detail()
     except Exception:
@@ -64,11 +64,12 @@ def main() -> None:
     ap.add_argument("dataset_id", type=int)
     ap.add_argument("--provider", default="", help="fine-tuning provider address (default: first listed)")
     ap.add_argument("--config", default="", help="JSON training-params file (default: built-in)")
+    ap.add_argument("--network", default="testnet", choices=["testnet", "mainnet"],
+                    help="0G network (mainnet needs ~3.1 real 0G in the wallet for ledger + gas)")
     a = ap.parse_args()
 
-    import zerog_py_sdk as z
-    broker = z.create_broker(config.WALLET_PRIVATE_KEY, network="testnet", rpc_url=config.ZEROG_RPC_URL)
-    require_funding(broker)
+    broker = zerog.broker(a.network)
+    require_funding(broker, a.network)
 
     ft = broker.fine_tuning
     svcs = ft.list_service()

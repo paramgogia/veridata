@@ -21,12 +21,11 @@ from app import config, zerog  # noqa: E402
 BASE_MODEL = "Qwen2.5-0.5B-Instruct"
 
 
-def broker():
-    import zerog_py_sdk as z
-    bal = zerog.wallet_balance_0g()
+def broker(network: str):
+    bal = zerog.wallet_balance_0g(network)
     if bal < zerog.MIN_COMPUTE_LEDGER_0G * 10**18:
-        raise SystemExit(f"wallet holds {bal / 1e18:.2f} 0G; the compute ledger needs >= {zerog.MIN_COMPUTE_LEDGER_0G} 0G")
-    return z.create_broker(config.WALLET_PRIVATE_KEY, network="testnet", rpc_url=config.ZEROG_RPC_URL)
+        raise SystemExit(f"wallet holds {bal / 1e18:.2f} 0G on {network}; the compute ledger needs >= {zerog.MIN_COMPUTE_LEDGER_0G} 0G")
+    return zerog.broker(network)
 
 
 def main() -> None:
@@ -37,9 +36,11 @@ def main() -> None:
     ap.add_argument("--adapter", default="", help="adapter name for --status / --prompt")
     ap.add_argument("--status", action="store_true", help="show adapter serving status")
     ap.add_argument("--prompt", default="", help="chat message for --adapter")
+    ap.add_argument("--network", default="testnet", choices=["testnet", "mainnet"],
+                    help="0G network (mainnet needs ~3.1 real 0G in the wallet for ledger + gas)")
     a = ap.parse_args()
 
-    b = broker()
+    b = broker(a.network)
     inf = b.inference
     if a.list:
         for ad in inf.list_adapters(a.provider):
