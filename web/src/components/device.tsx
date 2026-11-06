@@ -1,5 +1,5 @@
 "use client";
-import { Camera, Droplets, Laptop, Nfc, Radio, ScanLine, Tag, Thermometer, Video, Wifi, WifiOff, X } from "lucide-react";
+import { Camera, Droplets, FlaskConical, Laptop, Nfc, Radio, ScanLine, Tag, Thermometer, Video, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, url, WS_BASE } from "@/lib/api";
 import { Badge, Button, cx, ErrorNote } from "./ui";
@@ -161,8 +161,14 @@ export function BrowserCamera({ camRef, className }: { camRef: { current: Browse
   );
 }
 
-export function SensorTiles({ t }: { t: Telemetry | null }) {
+export function SensorTiles({ t, test }: { t: Telemetry | null; test?: boolean }) {
   return (
+    <div className="space-y-2">
+    {test && (
+      <div className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-1.5 text-[11px] text-warn">
+        TEST SENSOR DATA ON: missing readings (and the RFID tag, if none is scanned) are filled with test values at capture. The signed manifest lists them as test_fields.
+      </div>
+    )}
     <div className="grid grid-cols-2 gap-2">
       <div className="rounded-xl border border-line bg-raised/40 p-3">
         <div className="label flex items-center gap-1"><Radio className="h-3 w-3" /> IR sensor</div>
@@ -184,6 +190,7 @@ export function SensorTiles({ t }: { t: Telemetry | null }) {
         <div className={cx("mt-1 text-sm font-semibold", t?.online ? "text-ok" : "text-bad")}>{t ? (t.online ? "Online" : "Offline") : "connecting…"}</div>
         <div className="mt-1 truncate text-[11px] text-faint">{t?.online ? (t.simulated ? "simulated readings" : `live · fw ${t.fw}`) : t?.error || ""}</div>
       </div>
+    </div>
     </div>
   );
 }
@@ -238,7 +245,7 @@ export function RfidPanel({ t, marked, onClear, onAssociated }: { t: Telemetry |
   );
 }
 
-export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getImage, browser }: { devId: string; onCaptured: (s: any) => void; extra?: Record<string, unknown>; marked?: MarkedTag; disabled?: boolean; getImage?: () => Promise<string | null>; browser?: boolean }) {
+export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getImage, browser, testSensors }: { devId: string; onCaptured: (s: any) => void; extra?: Record<string, unknown>; marked?: MarkedTag; disabled?: boolean; getImage?: () => Promise<string | null>; browser?: boolean; testSensors?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const go = async () => {
@@ -253,7 +260,7 @@ export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getI
       }
       onCaptured(await api(`/api/devices/${devId}/capture`, {
         method: "POST",
-        json: { attach_rfid: true, rfid_uids: marked ? [marked.uid] : [], ...extra, ...(image_b64 ? { image_b64 } : {}) },
+        json: { attach_rfid: true, rfid_uids: marked ? [marked.uid] : [], ...extra, ...(image_b64 ? { image_b64 } : {}), ...(testSensors ? { test_sensors: true } : {}) },
       }));
     } catch (e: any) {
       setErr(e.message);
@@ -264,7 +271,7 @@ export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getI
   return (
     <div className="space-y-2">
       <Button variant="primary" className="w-full" onClick={go} loading={busy} disabled={disabled}>
-        <Camera className="h-4 w-4" /> Capture & sign{browser ? " (this device's camera)" : ""}{marked ? ` · tag ${marked.uid}` : ""}
+        <Camera className="h-4 w-4" /> Capture & sign{browser ? " (this device's camera)" : ""}{testSensors ? " · test sensors" : ""}{marked ? ` · tag ${marked.uid}` : ""}
       </Button>
       <div className="text-[11px] text-faint">{browser
         ? "Takes the photo with this device's camera; sensor readings (if the board is online), RFID and the signature work as usual. The manifest records camera: browser."
@@ -281,6 +288,8 @@ export function ManifestView({ s }: { s: any }) {
       <div className="flex flex-wrap gap-1.5">
         <Badge tone={s.sig_mode === "device-hardware" ? "ok" : "warn"}><ScanLine className="h-3 w-3" /> ES256 · {s.sig_mode}</Badge>
         <Badge>manifest {s.manifest_hash.slice(0, 10)}…</Badge>
+        {s.manifest?.meta?.test_fields?.length > 0 && <Badge tone="warn">TEST DATA: {s.manifest.meta.test_fields.join(", ")}</Badge>}
+        {s.manifest?.meta?.camera === "browser" && <Badge tone="warn">camera: this device</Badge>}
       </div>
       <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{JSON.stringify(s.manifest, null, 2)}</pre>
       <div className="break-all font-mono text-[10px] text-faint">sig: {s.signature}</div>
@@ -294,6 +303,7 @@ export function DeviceLive({ dev, onCaptured, captureExtra }: { dev: any; onCapt
   const [source, setSource] = useState<"rig" | "browser">("rig");
   const [camDown, setCamDown] = useState(false);
   const camRef = useRef<BrowserCamHandle | null>(null);
+  const [testSensors, setTestSensors] = useState(false);
   // latch every tag the reader sees; it stays marked after the tag leaves the field
   useEffect(() => {
     const r = t?.rfid;
@@ -301,6 +311,8 @@ export function DeviceLive({ dev, onCaptured, captureExtra }: { dev: any; onCapt
   }, [t?.rfid?.uid, t?.rfid?.label]);
   const boardOffline = !dev.simulated && t != null && !t.online;
   const browser = source === "browser";
+  // offer test data when the board is down or any reading is missing (e.g. a dead DHT)
+  const missingReading = !dev.simulated && t != null && (!t.online || t.temp_c == null || t.humidity_pct == null);
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
       <div className="space-y-2">
@@ -317,17 +329,22 @@ export function DeviceLive({ dev, onCaptured, captureExtra }: { dev: any; onCapt
         )}
       </div>
       <div className="space-y-3">
-        <SensorTiles t={t} />
+        <SensorTiles t={t} test={testSensors} />
+        {(missingReading || testSensors) && (
+          <Button size="sm" variant={testSensors ? "secondary" : "ghost"} className="w-full" onClick={() => setTestSensors((v) => !v)}>
+            <FlaskConical className="h-3.5 w-3.5" /> {testSensors ? "Test sensor data ON (click to turn off)" : "Sensor missing? Use test sensor data"}
+          </Button>
+        )}
         <RfidPanel t={t} marked={marked} onClear={() => setMarked(null)}
           onAssociated={(label) => setMarked((m) => (m ? { ...m, label, asset_type: m.asset_type || "product" } : m))} />
-        <CaptureButton devId={dev.id} marked={marked} extra={captureExtra} browser={browser}
+        <CaptureButton devId={dev.id} marked={marked} extra={captureExtra} browser={browser} testSensors={testSensors}
           getImage={() => camRef.current?.grab() ?? Promise.resolve(null)}
-          disabled={!browser && (boardOffline || camDown)}
+          disabled={!browser && (camDown || (boardOffline && !testSensors))}
           onCaptured={(s) => { onCaptured(s); setMarked(null); }} />
-        {!browser && boardOffline && (
-          <div className="text-[11px] text-bad">Sensor board offline: rig capture is disabled. Switch to this device's camera to capture without sensor readings.</div>
+        {!browser && boardOffline && !testSensors && (
+          <div className="text-[11px] text-bad">Sensor board offline: turn on test sensor data, or switch to this device's camera.</div>
         )}
-        {browser && boardOffline && (
+        {browser && boardOffline && !testSensors && (
           <div className="text-[11px] text-warn">Sensor board offline: this capture will carry no sensor readings (recorded as sensor_board: offline in the signed manifest).</div>
         )}
       </div>

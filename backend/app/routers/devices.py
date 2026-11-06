@@ -69,7 +69,7 @@ async def create_device(body: DeviceCreate, request: Request, user: User = Depen
     audit(db, user.address, "device.register", dev_id, {"signing_mode": dev.signing_mode, "simulated": dev.simulated}, auth.client_ip(request))
     db.commit()
     from .. import arkiv
-    arkiv.write_device(dev.id, user.address, dev.name, "simulated" if dev.simulated else dev.kind,
+    arkiv.background(arkiv.write_device, dev.id, user.address, dev.name, "simulated" if dev.simulated else dev.kind,
                        dev.pubkey_hex, dev.signing_mode, dev.registration_tx, dev.registration_mode,
                        dev.status, dev.created_at)
     return device_view(dev) | {"chain_device_id": chain_device_id(dev.id)}
@@ -242,6 +242,18 @@ class CaptureBody(BaseModel):
     # Fallback when the ESP32-CAM is down: a JPEG taken with the browser's own camera
     # (base64). Sensors, RFID and signing are unchanged; the manifest records the camera used.
     image_b64: str | None = None
+    # Demo fallback when the sensor board (or one sensor) is down: fill ONLY the missing readings
+    # with test values. Real readings always win. The signed manifest lists every test field.
+    test_sensors: bool = False
+
+
+TEST_TAG_UID = "TEST0001"
+
+
+def _test_readings() -> dict:
+    import random
+    return {"ir": random.random() < 0.5, "temp_c": round(random.uniform(26.0, 30.0), 1),
+            "humidity_pct": round(random.uniform(48.0, 65.0), 1)}
 
 
 def _browser_jpeg(b64: str) -> bytes:
@@ -280,14 +292,28 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
         tag = db.get(RfidTag, uid)
         rfid.append({"uid": uid, "label": tag.label if tag else None,
                      "seen_ms_ago": (tel.get("rfid") or {}).get("seen_ms_ago") if (tel.get("rfid") or {}).get("uid") == uid else None})
-    sensors = {k: tel.get(k) for k in ("ir", "temp_c", "humidity_pct") if tel.get(k) is not None}
     board_online = dev.simulated or bool(tel.get("online"))
-    if not board_online and camera != "browser":
-        raise HTTPException(502, "sensor board offline: use this device's camera to capture without sensor readings")
-    # `camera` and `sensor_board` are signed into the manifest, so a browser photo or a capture
-    # without sensor readings can never pass as a full rig capture.
+    sensors = {k: tel.get(k) for k in ("ir", "temp_c", "humidity_pct") if board_online and tel.get(k) is not None}
+    test_fields: list[str] = []
+    if body.test_sensors:
+        fake = _test_readings()
+        for k in ("ir", "temp_c", "humidity_pct"):
+            if k not in sensors:
+                sensors[k] = fake[k]
+                test_fields.append(k)
+        if not rfid:
+            tag = db.get(RfidTag, TEST_TAG_UID)
+            rfid.append({"uid": TEST_TAG_UID, "label": tag.label if tag else "Test tag", "seen_ms_ago": None})
+            test_fields.append("rfid")
+    if not board_online and camera != "browser" and not body.test_sensors:
+        raise HTTPException(502, "sensor board offline: use test sensor data or this device's camera")
+    # `camera`, `sensor_board` and `test_fields` are signed into the manifest, so a browser photo or
+    # a capture with test readings can never pass as a full rig capture.
     meta = {"fw": tel.get("fw"), "simulated": dev.simulated, "source": "device-capture", "camera": camera,
-            "sensor_board": "online" if board_online else "offline"}
+            "sensor_board": ("online" if board_online else "offline") if not test_fields else
+                            ("online+test-data" if board_online else "test-data")}
+    if test_fields:
+        meta["test_fields"] = test_fields
     manifest = provenance.build_manifest(dev, jpeg, st["width"], st["height"], sensors, rfid, meta)
     # 0G storage: encrypt + upload the ciphertext BEFORE signing, so the storage
     # root is part of the signed manifest's media block (resolvable independently).
