@@ -91,6 +91,9 @@ class Sample(Base):
     phash = Column(String(32), default="", index=True)
     storage_ref = Column(String(200))
     key_wrapped = Column(Text)
+    storage_root_media = Column(String(80), default="")  # 0G root hash of the ciphertext
+    storage_root_manifest = Column(String(80), default="")  # 0G root hash of the canonical manifest
+    storage_tx = Column(String(80), default="")  # 0G storage transaction
     preview_file = Column(String(200), default="")
     manifest = Column(JSON, nullable=True)
     manifest_hash = Column(String(64), default="", index=True)

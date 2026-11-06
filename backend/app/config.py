@@ -58,6 +58,19 @@ AI_BASE_URL = env("AI_BASE_URL")
 AI_API_KEY = env("AI_API_KEY")
 AI_MODEL = env("AI_MODEL")
 
+# ---- 0G (Galileo testnet): decentralized storage + confidential compute ----
+ZEROG_RPC_URL = env("0G_RPC_URL", "https://evmrpc-testnet.0g.ai")
+ZEROG_STORAGE_INDEXER_URL = env("0G_STORAGE_INDEXER_URL", "https://indexer-storage-testnet-turbo.0g.ai")
+ZEROG_FLOW_ADDRESS = env("0G_FLOW_ADDRESS", "0x22E03a6A89B950F1c82ec5e74F8eCa321a105296")
+ZEROG_CHAIN_ID = int(env("0G_CHAIN_ID", "16602"))
+ZEROG_EXPLORER = env("0G_EXPLORER", "https://storagescan-galileo.0g.ai")
+# Wallet used for 0G storage txs (and previously the Sepolia verifier role).
+# VERIFIER_PRIVATE_KEY is the legacy name kept for compatibility.
+WALLET_PRIVATE_KEY = env("WALLET_PRIVATE_KEY") or env("VERIFIER_PRIVATE_KEY")
+# Auto-resolve a TEE inference provider via the 0G compute broker when no
+# explicit AI_BASE_URL is configured. Requires >= 3 0G in the wallet ledger.
+ZEROG_COMPUTE_AUTO = env("0G_COMPUTE_AUTO", "1") == "1"
+
 # ---- Chain: a single Veridata.sol deployed from Remix on Ethereum Sepolia ----
 CHAIN_ID = int(env("CHAIN_ID", "11155111"))
 CHAIN_RPC_URL = env("CHAIN_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com")

@@ -125,7 +125,14 @@ def heuristic_match(description: str, categories: list[str]) -> tuple[float, lis
 
 
 def model_assess(data: bytes, description: str, categories: list[str]) -> dict[str, Any] | None:
-    if not (AI_BASE_URL and AI_MODEL):
+    # Provider resolution: explicit AI_BASE_URL (OpenAI, Meta, 0G Router, …) wins;
+    # otherwise try the 0G compute broker's TEE provider (wallet-settled).
+    cfg: dict[str, str] | None = {"base_url": AI_BASE_URL, "api_key": AI_API_KEY, "model": AI_MODEL, "engine": "explicit"} \
+        if (AI_BASE_URL and AI_MODEL) else None
+    if cfg is None:
+        from . import zerog
+        cfg = zerog.ai_config()
+    if not (cfg and cfg.get("base_url") and cfg.get("model")):
         return None
     import httpx
     b64 = base64.b64encode(data).decode()
@@ -138,9 +145,9 @@ def model_assess(data: bytes, description: str, categories: list[str]) -> dict[s
     )
     try:
         r = httpx.post(
-            f"{AI_BASE_URL.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {AI_API_KEY}"},
-            json={"model": AI_MODEL, "temperature": 0, "messages": [{"role": "user", "content": [
+            f"{cfg['base_url'].rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {cfg['api_key']}"},
+            json={"model": cfg["model"], "temperature": 0, "messages": [{"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]},
             timeout=40,
@@ -151,8 +158,9 @@ def model_assess(data: bytes, description: str, categories: list[str]) -> dict[s
         m = re.search(r"\{.*\}", txt, re.S)
         out = json.loads(m.group(0)) if m else {}
         out["request_id"] = r.headers.get("x-request-id") or r.headers.get("request-id") or body.get("id", "")
-        out["model"] = AI_MODEL
-        out["provider"] = AI_BASE_URL
+        out["model"] = cfg["model"]
+        out["provider"] = cfg["base_url"]
+        out["engine"] = cfg.get("engine", "explicit")
         return out
     except Exception as e:
         return {"error": f"{type(e).__name__}: {str(e)[:160]}"}

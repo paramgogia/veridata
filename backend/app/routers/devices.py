@@ -11,7 +11,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import auth, crypto, hardware, provenance, quality
+from .. import auth, crypto, hardware, provenance, quality, zerog
 from ..chain import client as chain
 from ..config import CAM_CAPTURE_URL, CAM_STREAM_URL, DEVICE_CONTROL_URL
 from ..db import Device, RfidTag, Sample, SessionLocal, User, audit, get_db
@@ -259,6 +259,15 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
         raise HTTPException(502, "sensor board offline: refusing to sign a capture without real sensor readings")
     meta = {"fw": tel.get("fw"), "simulated": dev.simulated, "source": "device-capture"}
     manifest = provenance.build_manifest(dev, jpeg, st["width"], st["height"], sensors, rfid, meta)
+    # 0G storage: encrypt + upload the ciphertext BEFORE signing, so the storage
+    # root is part of the signed manifest's media block (resolvable independently).
+    media_store = None
+    if zerog.enabled():
+        media_store = zerog.store_media(jpeg, manifest["capture_id"])
+        manifest["media"]["storage"] = {"local": media_store["ref"],
+                                        "root_0g": media_store["root"] or "", "tx_0g": media_store["tx"] or ""}
+        if media_store.get("error"):
+            manifest["meta"]["0g_error"] = media_store["error"]
     if dev.signing_mode == "device-hardware":
         try:
             sig = await hardware.device_sign(dev, crypto.sha256_hex(crypto.canonical(manifest)))
@@ -268,9 +277,20 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
         sig = provenance.sign_manifest_dev(dev, manifest)
     s = provenance.store_sample(db, owner_id=user.id, media=jpeg, manifest=manifest, signature=sig, dev=dev,
                                 label=body.label, description=body.description, categories=body.categories,
-                                keywords=body.keywords, rfid=rfid, sensors=sensors, phash=st["phash"], blur_preview=False)
+                                keywords=body.keywords, rfid=rfid, sensors=sensors, phash=st["phash"], blur_preview=False,
+                                media_store=media_store)
+    if zerog.enabled():
+        try:  # manifest itself goes to 0G too; its root is stored beside the sample
+            _mtx, mroot = zerog.upload_bytes(crypto.canonical(manifest), f"{s.id}.manifest.json")
+            s.storage_root_manifest = mroot
+            if not s.storage_tx:
+                s.storage_tx = _mtx
+        except Exception as e:
+            audit(db, user.address, "capture.0g-manifest-failed", s.id, {"error": str(e)[:120]}, auth.client_ip(request))
     dev.last_seen = time.time()
-    audit(db, user.address, "capture", s.id, {"device": dev.id, "sha256": s.media_sha256, "sig_mode": dev.signing_mode}, auth.client_ip(request))
+    audit(db, user.address, "capture", s.id, {"device": dev.id, "sha256": s.media_sha256, "sig_mode": dev.signing_mode,
+                                              "0g": {"root_media": s.storage_root_media, "root_manifest": s.storage_root_manifest}},
+          auth.client_ip(request))
     db.commit()
     return sample_view(s, full=True)
 

@@ -23,6 +23,8 @@ def sample_view(s: Sample, full: bool = False) -> dict[str, Any]:
         "description": s.description, "keywords": s.keywords, "categories": s.categories, "rfid": s.rfid,
         "sensors": s.sensors, "status": s.status, "dataset_id": s.dataset_id, "sig_mode": s.sig_mode,
         "signed": bool(s.signature), "manifest_hash": s.manifest_hash, "storage_ref": s.storage_ref,
+        "storage_0g": {"root_media": s.storage_root_media, "root_manifest": s.storage_root_manifest,
+                       "tx": s.storage_tx, "resolve_url": f"/api/zerog/manifest/{s.storage_root_manifest}" if s.storage_root_manifest else None},
         "preview_url": f"/api/previews/{s.preview_file}" if s.preview_file else None, "is_demo": s.is_demo,
         "quality": s.quality,
     }

@@ -3,6 +3,7 @@ There is deliberately NO endpoint that returns decrypted original media to buyer
 from __future__ import annotations
 
 import io
+import json
 import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -68,6 +69,31 @@ def get_sample(sid: str, db: Session = Depends(get_db)):
     if not s:
         raise HTTPException(404, "sample not found")
     return sample_view(s, full=True)
+
+
+@router.get("/zerog/manifest/{root}")
+def zerog_manifest(root: str):
+    """Resolve a manifest from 0G storage by root hash — lets anyone (the Proof Card,
+    a buyer, an auditor) fetch a signed manifest and re-derive hashes independently
+    of the platform database. The caller checks sha256(canonical(manifest)) == root;
+    the device signature verifies against the on-chain key registry."""
+    from .. import zerog
+    if not zerog.enabled():
+        raise HTTPException(503, "0G storage not configured")
+    if not (len(root) == 64 and all(c in "0123456789abcdefABCDEF" for c in root)):
+        raise HTTPException(400, "root must be a 64-char hex hash")
+    try:
+        data = zerog.download_bytes(root)
+    except Exception as e:
+        raise HTTPException(404, f"manifest not resolvable from 0G: {type(e).__name__}")
+    try:
+        manifest = json.loads(data)
+    except Exception:
+        raise HTTPException(422, "resolved bytes are not canonical JSON")
+    from .. import crypto
+    mh = crypto.sha256_hex(crypto.canonical(manifest))
+    return {"root": root, "resolved_sha256": mh, "matches_root": mh.lower() == root.lower(),
+            "manifest": manifest, "bytes": len(data)}
 
 
 class MetaBody(BaseModel):

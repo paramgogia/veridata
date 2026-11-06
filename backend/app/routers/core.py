@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import auth, ledger
 from ..chain import client as chain
+from .. import config
 from ..config import CHAIN_ID, EXPLORER_URL, PLATFORM_FEE_BPS, UPLOAD_FEE
 from ..db import (AuditEvent, DataRequest, Dataset, Device, License, Sample, Submission, TrainingRun, Tx, User, audit, get_db)
 from ..serialize import dataset_view, device_view, request_view, user_brief
@@ -102,8 +103,10 @@ def faucet(user: User = Depends(auth.current_user), db: Session = Depends(get_db
 
 @router.get("/config")
 def config_view():
+    from .. import zerog
     return {"chain": chain.status(), "chainId": CHAIN_ID, "explorer": EXPLORER_URL, "uploadFee": UPLOAD_FEE,
-            "platformFeeBps": PLATFORM_FEE_BPS, "units": "gwei"}
+            "platformFeeBps": PLATFORM_FEE_BPS, "units": "gwei",
+            "zerog": {"storage": zerog.enabled(), "compute": zerog.compute_status(), "explorer": config.ZEROG_EXPLORER}}
 
 
 @router.get("/stats")

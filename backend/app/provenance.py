@@ -53,9 +53,12 @@ def sign_manifest_dev(dev: Device, manifest: dict) -> str:
 def store_sample(db: Session, *, owner_id: int, media: bytes, manifest: dict | None, signature: str, dev: Device | None,
                  label: str = "", description: str = "", keywords: list | None = None, categories: list | None = None,
                  rfid: list | None = None, sensors: dict | None = None, is_demo: bool = False, phash: str = "",
-                 blur_preview: bool = True) -> Sample:
+                 blur_preview: bool = True, media_store: dict | None = None) -> Sample:
     sid = manifest["capture_id"] if manifest else str(uuid.uuid4())
-    ref, wrapped = storage.put_encrypted(media, sid)
+    if media_store and media_store.get("ref") and media_store.get("wrapped"):
+        ref, wrapped = media_store["ref"], media_store["wrapped"]  # already encrypted (+0G-uploaded) by the caller
+    else:
+        ref, wrapped = storage.put_encrypted(media, sid)
     preview = storage.make_preview(media, sid, blur=blur_preview)
     from .quality import image_stats
     st = image_stats(media)
@@ -64,6 +67,7 @@ def store_sample(db: Session, *, owner_id: int, media: bytes, manifest: dict | N
         captured_at=manifest["captured_at"] if manifest else time.time(),
         media_sha256=crypto.sha256_hex(media), media_bytes=len(media), width=st["width"], height=st["height"],
         phash=phash or st["phash"], storage_ref=ref, key_wrapped=wrapped, preview_file=preview,
+        storage_root_media=(media_store or {}).get("root", ""), storage_tx=(media_store or {}).get("tx", ""),
         manifest=manifest, manifest_hash=crypto.sha256_hex(crypto.canonical(manifest)) if manifest else "",
         signature=signature, sig_mode=(manifest or {}).get("signer", {}).get("mode", "none") if signature else "none",
         label=label, description=description, keywords=keywords or [], categories=categories or [],
