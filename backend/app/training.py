@@ -70,6 +70,20 @@ def _evaluate(model, X, y):
     return {"loss": round(loss, 4), "accuracy": round(acc, 4), "per_class": per}
 
 
+def _variant(img: "Image.Image", rng: random.Random) -> "Image.Image":
+    """One random, label-preserving variant: crop, small rotation, flip, brightness/contrast."""
+    from PIL import Image, ImageEnhance
+    w, h = img.size
+    f = rng.uniform(0.78, 0.95)
+    cw, ch = int(w * f), int(h * f)
+    x0, y0 = rng.randint(0, w - cw), rng.randint(0, h - ch)
+    out = img.crop((x0, y0, x0 + cw, y0 + ch)).rotate(rng.uniform(-14, 14), resample=Image.BILINEAR)
+    if rng.random() < 0.5:
+        out = out.transpose(Image.FLIP_LEFT_RIGHT)
+    out = ImageEnhance.Brightness(out).enhance(rng.uniform(0.75, 1.25))
+    return ImageEnhance.Contrast(out).enhance(rng.uniform(0.8, 1.2))
+
+
 def run_training(run_id: int) -> None:
     db = SessionLocal()
     run = db.get(TrainingRun, run_id)
@@ -94,10 +108,18 @@ def run_training(run_id: int) -> None:
         if bad:
             raise PermissionError(f"no training license for dataset(s) {bad}")
         samples = db.query(Sample).filter(Sample.dataset_id.in_(run.dataset_ids), Sample.label != "").all()
-        classes = sorted({s.label for s in samples})
+        samples = [s for s in samples if s.label.strip()]  # ignore whitespace-only labels
+        classes = sorted({s.label.strip() for s in samples if s.label.strip()})
         if len(classes) < 2:
             raise ValueError("need at least 2 labelled classes across the selected datasets")
+        counts = {c: sum(1 for s in samples if s.label.strip() == c) for c in classes}
+        thin = {c: n for c, n in counts.items() if n < 2}
+        few_shot = bool(thin)  # too few samples for an honest held-out split
         log(f"license check passed · {len(samples)} samples · classes: {', '.join(classes)}")
+        if few_shot:
+            log("few-shot mode: " + ", ".join(f"'{c}' has {n}" for c, n in thin.items())
+                + " sample(s). Training on augmented copies (crop/rotate/flip/colour) and validating on different "
+                  "augmented copies; accuracy is optimistic. Capture 5+ samples per label for a real evaluation.")
         p = run.params or {}
         epochs = max(1, min(40, int(p.get("epochs", 8))))
         lr = float(p.get("learning_rate", 0.003))
@@ -106,25 +128,44 @@ def run_training(run_id: int) -> None:
         augment = bool(p.get("augment", True))
         model, size = _build(run.base_model, len(classes), log)
 
-        xs, ys = [], []
+        imgs, ys = [], []
         for s in samples:  # decrypt in memory only
-            raw = storage.get_decrypted(s.storage_ref, s.key_wrapped, s.id)
-            img = Image.open(io.BytesIO(raw)).convert("RGB").resize((size, size))
-            xs.append(np.asarray(img, dtype=np.float32) / 255.0)
-            ys.append(classes.index(s.label))
+            from .provenance import sample_image
+            raw = sample_image(s)  # photo bytes, or the signed keyframe of a video
+            imgs.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+            ys.append(classes.index(s.label.strip()))
             del raw
-        log(f"decrypted {len(xs)} samples in memory (AES-256-GCM); no plaintext written to disk")
-        X = torch.tensor(np.stack(xs)).permute(0, 3, 1, 2)
+        log(f"decrypted {len(imgs)} samples in memory (AES-256-GCM); no plaintext written to disk")
         mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-        X = (X - mean) / std
-        Y = torch.tensor(ys)
-        idx = list(range(len(Y)))
-        random.shuffle(idx)
-        nv = max(len(classes), int(len(idx) * val_split))
-        vi, ti = torch.tensor(idx[:nv]), torch.tensor(idx[nv:])
-        Xt, Yt, Xv, Yv = X[ti], Y[ti], X[vi], Y[vi]
-        log(f"split: {len(ti)} train / {len(vi)} validation · epochs={epochs} lr={lr} batch={bs} augment={augment}")
+
+        def to_tensor(pils: list) -> torch.Tensor:
+            arr = np.stack([np.asarray(im.resize((size, size)), dtype=np.float32) / 255.0 for im in pils])
+            return (torch.tensor(arr).permute(0, 3, 1, 2) - mean) / std
+
+        if few_shot:
+            # train: original + 5 variants; validate: 2 variants from a different random stream
+            tr_rng, va_rng = random.Random(1), random.Random(2)
+            t_imgs, t_ys, v_imgs, v_ys = [], [], [], []
+            for im, y in zip(imgs, ys):
+                t_imgs += [im] + [_variant(im, tr_rng) for _ in range(5)]
+                t_ys += [y] * 6
+                v_imgs += [_variant(im, va_rng) for _ in range(2)]
+                v_ys += [y] * 2
+            Xt, Yt = to_tensor(t_imgs), torch.tensor(t_ys, dtype=torch.long)
+            Xv, Yv = to_tensor(v_imgs), torch.tensor(v_ys, dtype=torch.long)
+            log(f"split (few-shot): {len(Yt)} augmented train / {len(Yv)} augmented validation from {len(imgs)} originals · "
+                f"epochs={epochs} lr={lr} batch={bs} augment={augment}")
+        else:
+            X, Y = to_tensor(imgs), torch.tensor(ys, dtype=torch.long)
+            idx = list(range(len(Y)))
+            random.shuffle(idx)
+            # at least one validation sample per class, but always leave training samples
+            nv = min(max(len(classes), int(len(idx) * val_split)), len(idx) - len(classes))
+            vi = torch.tensor(idx[:nv], dtype=torch.long)
+            ti = torch.tensor(idx[nv:], dtype=torch.long)
+            Xt, Yt, Xv, Yv = X[ti], Y[ti], X[vi], Y[vi]
+            log(f"split: {len(ti)} train / {len(vi)} validation · epochs={epochs} lr={lr} batch={bs} augment={augment}")
 
         before = _evaluate(model, Xv, Yv)
         run.before = before
@@ -166,6 +207,7 @@ def run_training(run_id: int) -> None:
         after["train_accuracy"] = train_eval["accuracy"]
         after["generalization_gap"] = gap
         after["memorization_risk"] = "elevated" if gap > 0.15 else "low"
+        after["evaluation"] = "few-shot: augmented copies of the same originals (optimistic)" if few_shot else "held-out samples"
         run.after = after
         run.classes = classes
 
@@ -180,7 +222,7 @@ def run_training(run_id: int) -> None:
         dss = db.query(Dataset).filter(Dataset.id.in_(run.dataset_ids)).all()
         lic = {l.dataset_id: l for l in db.query(License).filter(License.buyer_id == user.id).all()}
         run.card = {
-            "model": run.base_model, "classes": classes, "params": {"epochs": epochs, "learning_rate": lr, "batch_size": bs, "val_split": val_split, "augment": augment},
+            "model": run.base_model, "classes": classes, "params": {"epochs": epochs, "learning_rate": lr, "batch_size": bs, "val_split": val_split, "augment": augment, "few_shot": few_shot},
             "metrics": {"before": before, "after": after}, "weights_sha256": run.weights_sha256, "weights_bytes": len(wbytes),
             "trained_by": user.address, "trained_at": time.time(),
             "provenance": [{"dataset_id": d.id, "title": d.title, "content_root": d.content_root, "samples": d.sample_count,
