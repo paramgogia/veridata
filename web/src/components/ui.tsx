@@ -228,9 +228,9 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+export function Field({ label, hint, children, className }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
   return (
-    <label className="block">
+    <label className={cx("block", className)}>
       <div className="mb-1.5 flex items-baseline justify-between">
         <span className="text-xs font-medium text-muted">{label}</span>
         {hint && <span className="text-[11px] text-faint">{hint}</span>}
