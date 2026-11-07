@@ -1,0 +1,9 @@
+data/
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+arkiv/node_modules/
+.env
+.env.*

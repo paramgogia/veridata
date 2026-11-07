@@ -1,6 +1,7 @@
 """Veridata API — run with:  uvicorn app.main:app --port 8000  (from backend/)"""
 from __future__ import annotations
 
+import os
 import time
 from collections import defaultdict, deque
 
@@ -8,11 +9,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from . import config
 from .db import init_db
 from .routers import core, devices, market, requests, samples, training, whitechain
 
 app = FastAPI(title="Veridata API", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_credentials=True,
+# Browser origins allowed to call the API: local dev, extra origins in CORS_ORIGINS (comma separated),
+# and hosted deployments via CORS_ORIGIN_REGEX (default: any https://*.vercel.app or *.up.railway.app; empty disables).
+_origins = ["http://localhost:3000", "http://127.0.0.1:3000"] + [o.strip().rstrip("/") for o in config.env("CORS_ORIGINS").split(",") if o.strip()]
+_origin_regex = os.environ.get("CORS_ORIGIN_REGEX", r"https://[a-z0-9-]+\.(vercel\.app|up\.railway\.app)")
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_origin_regex=_origin_regex or None, allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["X-PAYMENT-RESPONSE"])
 
 # Simple sliding-window rate limit per IP (in-memory; use a shared store in production).

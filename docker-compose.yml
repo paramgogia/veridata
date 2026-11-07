@@ -1,0 +1,21 @@
+# Run the whole stack in containers (local test, or any VPS):  docker compose up --build
+# Backend state persists in the "argus-data" volume. Secrets come from ./.env (never committed).
+services:
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      PORT: "8000"
+    ports: ["8000:8000"]
+    volumes: ["argus-data:/app/data"]
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      PORT: "3000"
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes:
+  argus-data:
