@@ -50,7 +50,7 @@ function Dashboard() {
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Recent submissions" right={<Button size="sm" href="/">Find requests</Button>} />
+              <CardHeader title="Recent submissions" right={<Button size="sm" href="/demand">Find requests</Button>} />
               <div className="divide-y divide-line">
                 {x.submissions.map((s: any) => (
                   <Link key={s.id} href={`/requests/${s.request_id}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-xs hover:bg-raised/40">

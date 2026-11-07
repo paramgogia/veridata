@@ -51,6 +51,18 @@ still runs: 0G falls back to local storage, AI checks to heuristics, Arkiv is sk
 | `NEXT_PUBLIC_API_URL` | the api's public URL (**required**, baked in at build: redeploy after changing it) |
 | `NEXT_PUBLIC_ARKIV_ACCESS_KEY` | optional: the Demand Board reads requests from Arkiv |
 
+## Render
+
+1. **api:** render.com → *New → Web Service* → this repo
+   - Root Directory `backend`, Runtime **Docker**, Instance **Standard (2 GB)** (training needs the RAM)
+   - Health Check Path `/api/health`
+   - *Advanced → Add Disk*: mount path **`/app/data`**, 1 GB (paid instances only; without it data is lost on every deploy)
+   - Environment: the api variables above. Render sets `PORT` itself.
+2. **web:** *New → Web Service* → same repo
+   - Root Directory `web`, Runtime **Node**, Build `npm ci && npm run build`, Start `npm start`, Instance Free is fine
+   - Environment: `NEXT_PUBLIC_API_URL=https://<api-service>.onrender.com`
+3. CORS already allows `https://*.onrender.com`.
+
 ## Devices in the cloud
 
 A cloud backend cannot reach boards on a private Wi-Fi network (`192.168.x` / `172.20.10.x`). Options:

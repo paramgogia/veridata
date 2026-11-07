@@ -25,7 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 
 const NAV = [
-  { href: "/", label: "Demand Board", icon: Radar },
+  { href: "/demand", label: "Demand Board", icon: Radar },
   { href: "/marketplace", label: "Marketplace", icon: LayoutGrid },
   { href: "/requests", label: "Requests", icon: Boxes },
   { href: "/upload", label: "Capture & Upload", icon: Upload },
@@ -165,6 +165,8 @@ function Account() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [mobile, setMobile] = useState(false);
+  const path = usePathname();
+  if (path === "/") return <>{children}</>;  // the landing page is full-bleed, without the app chrome
   return (
     <div className="min-h-screen">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-line bg-bg px-3 py-4 lg:flex">
