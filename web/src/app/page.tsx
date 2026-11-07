@@ -1,6 +1,7 @@
 "use client";
 import { ArrowRight, ArrowUpRight, Github } from "lucide-react";
 import Link from "next/link";
+import { CaptureFlow } from "@/components/capture-flow";
 import { useApi } from "@/components/ui";
 import { num } from "@/lib/format";
 
@@ -121,7 +122,28 @@ export default function Landing() {
               <div><dt className="text-[11px] text-faint">Devices</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{figure(stats?.active_devices)}</dd></div>
             </dl>
           </div>
-          <ManifestCard />
+          <CaptureFlow className="min-w-0 self-center" />
+        </div>
+      </section>
+
+      {/* what gets signed */}
+      <section className="border-b border-line">
+        <div className="mx-auto grid max-w-6xl gap-12 px-5 py-20 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
+          <div className="flex flex-col justify-center">
+            <div className="label mb-4">What a rig signs</div>
+            <h2 className="text-[26px] font-semibold leading-tight tracking-tight">One signature covers the picture and everything around it.</h2>
+            <p className="mt-4 max-w-[34rem] text-[15px] leading-relaxed text-muted">
+              The media hash, the IR, temperature and humidity readings, the RFID tag in range and the 0G storage root go into a
+              single manifest. The device signs it with a key registered on Ethereum. Swap the photo, edit a reading or replay an old
+              capture, and verification fails at a named step.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2 font-mono text-[11px] text-muted">
+              {["content_hash", "keyframe_hash", "manifest_hash", "key_binding", "signature", "replay"].map((s) => (
+                <span key={s} className="rounded-md border border-line px-2 py-1">{s}</span>
+              ))}
+            </div>
+          </div>
+          <div className="min-w-0"><ManifestCard /></div>
         </div>
       </section>
 
