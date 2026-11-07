@@ -16,7 +16,7 @@ export default function Payments() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">USDT payments on Whitechain</h1>
-        <p className="text-sm text-muted">Buyers and AI agents pay dataset licenses in USDT with one signature. Veridata&apos;s relayer pays the gas in WBT.</p>
+        <p className="text-sm text-muted">Buyers and AI agents pay dataset licenses in USDT with one signature. Argus&apos;s relayer pays the gas in WBT.</p>
       </div>
       {!s.enabled && <Note tone="warn">Checkout disabled: set WHITECHAIN_PAY_ADDRESS (and a relayer key) in .env and restart the backend.</Note>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

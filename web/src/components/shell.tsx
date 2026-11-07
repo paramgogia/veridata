@@ -69,7 +69,7 @@ function Logo() {
         <path d="M6.5 8l5.5 9 5.5-9" stroke="rgb(var(--fg))" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         <circle cx="12" cy="7" r="1.4" fill="rgb(var(--ok))" />
       </svg>
-      <span className="text-[15px] font-semibold tracking-tight">Veridata</span>
+      <span className="text-[15px] font-semibold tracking-tight">Argus</span>
     </Link>
   );
 }
@@ -102,7 +102,7 @@ export function SignInModal({ open, onClose }: { open: boolean; onClose: () => v
     }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Sign in to Veridata">
+    <Modal open={open} onClose={onClose} title="Sign in to Argus">
       <div className="space-y-4">
         <button
           onClick={() => run("wallet", loginWallet)}

@@ -3,7 +3,7 @@ import { Providers, Shell } from "@/components/shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Veridata — verifiable data for AI training",
+  title: "Argus — verifiable data for AI training",
   description: "Demand-driven marketplace for hardware-verified real-world data. Capture, verify, monetize, train, export.",
 };
 

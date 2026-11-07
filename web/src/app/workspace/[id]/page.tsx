@@ -215,8 +215,8 @@ function Session() {
                   <Card>
                     <CardHeader title="6 · Export" sub="Weights + model card with training provenance" />
                     <div className="space-y-3 p-5">
-                      <Button variant="primary" className="w-full" onClick={() => download(`/api/runs/${run.id}/weights`, `veridata-run${run.id}-${run.base_model}.pt`)}><Download className="h-4 w-4" /> Download weights (.pt)</Button>
-                      <Button className="w-full" onClick={() => download(`/api/runs/${run.id}/card`, `veridata-run${run.id}-model-card.json`)}><FileJson className="h-4 w-4" /> Model card (JSON)</Button>
+                      <Button variant="primary" className="w-full" onClick={() => download(`/api/runs/${run.id}/weights`, `argus-run${run.id}-${run.base_model}.pt`)}><Download className="h-4 w-4" /> Download weights (.pt)</Button>
+                      <Button className="w-full" onClick={() => download(`/api/runs/${run.id}/card`, `argus-run${run.id}-model-card.json`)}><FileJson className="h-4 w-4" /> Model card (JSON)</Button>
                       <div className="pt-1">
                         <KV k="Weights sha256" v={<span className="hash">{run.weights_sha256.slice(0, 20)}…</span>} />
                         <KV k="Classes" v={run.classes.join(", ")} />

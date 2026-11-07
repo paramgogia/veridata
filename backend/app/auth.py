@@ -21,7 +21,7 @@ TOKEN_TTL = 7 * 24 * 3600
 
 
 def login_message(address: str, nonce: str) -> str:
-    return (f"Sign in to Veridata\n\nAddress: {address.lower()}\nNonce: {nonce}\n"
+    return (f"Sign in to Argus\n\nAddress: {address.lower()}\nNonce: {nonce}\n"
             "This signature proves wallet ownership. It does not send a transaction or cost gas.")
 
 
