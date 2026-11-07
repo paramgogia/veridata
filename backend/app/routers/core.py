@@ -139,6 +139,47 @@ def zerog_ft_run(body: FtRunBody, request: Request, user: User = Depends(auth.cu
     return out
 
 
+class DeployBody(BaseModel):
+    task_id: str
+
+
+@router.post("/zerog/ft/deploy")
+def zerog_deploy(body: DeployBody, user: User = Depends(auth.current_user)):
+    """Deploy a fine-tuned adapter to the serving provider (vLLM load, async)."""
+    from .. import zerog
+    if not zerog.enabled():
+        raise HTTPException(503, "0G wallet not configured")
+    out = zerog.start_deploy(body.task_id)
+    if not out.get("started"):
+        raise HTTPException(409, out.get("error", "deployment already in progress"))
+    return out
+
+
+@router.get("/zerog/ft/agents")
+def zerog_agents():
+    """Adapters deployed on the serving provider + the deployment run state."""
+    from .. import zerog
+    try:
+        return {"agents": zerog.list_agents(), "deploy": zerog.DEPLOY_RUN}
+    except Exception as e:
+        raise HTTPException(503, f"serving provider unreachable: {str(e)[:160]}")
+
+
+class ChatBody(BaseModel):
+    adapter: str
+    message: str
+
+
+@router.post("/zerog/ft/chat")
+def zerog_chat(body: ChatBody, user: User = Depends(auth.current_user)):
+    """Chat with a deployed fine-tuned adapter through the inference broker."""
+    from .. import zerog
+    try:
+        return zerog.chat_agent(body.adapter, body.message)
+    except Exception as e:
+        raise HTTPException(502, f"chat failed: {str(e)[:200]}")
+
+
 @router.get("/stats")
 def stats(db: Session = Depends(get_db)):
     q = db.query

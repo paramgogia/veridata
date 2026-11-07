@@ -171,7 +171,70 @@ function ZeroGPanel() {
               : "Funding: create the 0G compute ledger (3 0G) and fund the provider (1 0G) to train in a TEE. See README → 0G integration."}
           </div>
         )}
+        <ZeroGDeploy d={d} />
       </div>
     </Card>
+  );
+}
+
+function ZeroGDeploy({ d }: { d: any }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+  const [reply, setReply] = useState<any>(null);
+  const [chatting, setChatting] = useState(false);
+  const deploy = d.deploy || {};
+  const deploying = deploy.status === "running";
+  const agents = d.agents || [];
+  const finished = (d.tasks || []).find((t: any) => t.progress === "Finished");
+  const agent = agents.find((a: any) => a.state === "ready") || agents[0];
+  const doDeploy = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await api("/api/zerog/ft/deploy", { method: "POST", json: { task_id: finished.id } });
+    } catch (e: any) {
+      setErr(e.message);
+    } finally { setBusy(false); }
+  };
+  const doChat = async () => {
+    setChatting(true); setReply(null);
+    try {
+      setReply(await api("/api/zerog/ft/chat", { method: "POST", json: { adapter: agent.adapter, message: msg } }));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally { setChatting(false); }
+  };
+  if (!finished && agents.length === 0 && !deploying) return null;
+  return (
+    <div className="border-t border-line">
+      <div className="px-5 py-3">
+        <div className="mb-1 text-xs font-semibold text-faint">Deploy & serve</div>
+        {finished && !agents.length && (
+          <Button size="sm" variant="primary" loading={busy || deploying} onClick={doDeploy}>
+            <Sparkles className="h-3.5 w-3.5" /> Deploy adapter ({finished.id.slice(0, 8)}…)
+          </Button>
+        )}
+        {deploying && (
+          <div className="mt-2 max-h-20 overflow-y-auto rounded-md bg-bg p-2 font-mono text-[10px] leading-relaxed text-muted">
+            {(deploy.logs || []).map((l: string, i: number) => <div key={i}>{l}</div>)}
+          </div>
+        )}
+        {deploy.status === "error" && <div className="mt-1"><ErrorNote>{deploy.error}</ErrorNote></div>}
+        {agents.map((a: any) => (
+          <div key={a.adapter} className="mt-1 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-muted">adapter <span className="hash">{a.adapter?.slice(0, 14)}…</span></span>
+            <Badge tone={a.state === "ready" ? "ok" : "warn"}>{a.state}</Badge>
+          </div>
+        ))}
+        {agent && (
+          <div className="mt-2 flex items-center gap-2">
+            <input className="input" placeholder={`Ask ${agent.adapter.slice(0, 10)}…`} value={msg} onChange={(e) => setMsg(e.target.value)} />
+            <Button size="sm" variant="primary" loading={chatting} onClick={doChat} disabled={!msg}>Send</Button>
+          </div>
+        )}
+        {reply && <div className="mt-2 rounded-md bg-bg p-2 text-xs text-muted">{JSON.stringify(reply, null, 2).slice(0, 600)}</div>}
+        {err && <div className="mt-1"><ErrorNote>{err}</ErrorNote></div>}
+      </div>
+    </div>
   );
 }

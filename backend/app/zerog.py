@@ -191,7 +191,7 @@ def ft_status() -> dict[str, Any]:
 
 def _ft_refresh() -> dict[str, Any]:
     """One full status refresh; may take a while and runs inside a timeout guard."""
-    out: dict[str, Any] = {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {}, "tasks": [], "run": FT_RUN, "error": ""}
+    out: dict[str, Any] = {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {}, "tasks": [], "run": FT_RUN, "deploy": DEPLOY_RUN, "agents": [], "error": ""}
     if not enabled():
         return out
     try:
@@ -216,6 +216,10 @@ def _ft_refresh() -> dict[str, Any]:
             out["funding"]["provider_balance_0g"] = round(int(getattr(d, "balance", 0)) / 1e18, 4)
         except Exception:
             out["funding"]["provider_balance_0g"] = 0
+        try:
+            out["agents"] = list_agents()
+        except Exception:
+            pass  # the serving host flaps — agents surface when it's up
         tasks = b.fine_tuning.list_task(provider)
         for t in (tasks if isinstance(tasks, list) else [tasks]):
             out["tasks"].append({
@@ -341,6 +345,66 @@ def start_finetune(dataset_id: int, network: str = "testnet") -> dict[str, Any]:
         return {"started": False, "error": "a fine-tuning run is already in progress"}
     threading.Thread(target=run_finetune, args=(dataset_id, network), daemon=True).start()
     return {"started": True}
+
+
+# ---------------- adapter deployment + serving (platform relay) ----------------
+
+DEPLOY_RUN: dict[str, Any] = {"status": "idle", "task_id": "", "adapter": "", "error": "", "logs": []}
+
+
+def _log_deploy(msg: str) -> None:
+    DEPLOY_RUN["logs"] = (DEPLOY_RUN["logs"] or [])[-49:] + [f"[{time.strftime('%H:%M:%S')}] {msg}"]
+
+
+def deploy_task(task_id: str, network: str = "testnet") -> dict[str, Any]:
+    """Deploy a fine-tuned adapter to the serving provider (vLLM load) and return its name."""
+    DEPLOY_RUN.update(status="running", task_id=task_id, adapter="", error="", logs=[])
+    try:
+        b = broker(network)
+        svcs = b.fine_tuning.list_service()
+        if not svcs:
+            raise ValueError("no fine-tuning provider registered")
+        provider = svcs[0].provider
+        _log_deploy(f"deploying task {task_id[:8]}… on {FT_BASE_MODEL} via {provider[:10]}…")
+        res = _retry(lambda: b.inference.deploy_adapter(provider, FT_BASE_MODEL, task_id,
+                                                        wait=True, timeout_seconds=600),
+                     tries=2, wait_s=30, label="deploy_adapter")
+        name = res.adapter_name
+        _log_deploy(f"adapter deployed: {name}")
+        DEPLOY_RUN.update(status="done", adapter=name)
+        return {"ok": True, "adapter": name}
+    except Exception as e:
+        DEPLOY_RUN.update(status="error", error=f"{type(e).__name__}: {str(e)[:200]}")
+        _log_deploy(f"DEPLOY FAILED: {DEPLOY_RUN['error']}")
+        return {"ok": False, "error": DEPLOY_RUN["error"]}
+
+
+def start_deploy(task_id: str) -> dict[str, Any]:
+    """Kick off a deployment in a background thread (one at a time)."""
+    if DEPLOY_RUN.get("status") == "running":
+        return {"started": False, "error": "a deployment is already in progress"}
+    threading.Thread(target=deploy_task, args=(task_id,), daemon=True).start()
+    return {"started": True}
+
+
+def list_agents() -> list[dict[str, Any]]:
+    """Adapters currently deployed on the serving provider."""
+    b = broker("testnet")
+    svcs = b.fine_tuning.list_service()
+    provider = svcs[0].provider if svcs else ""
+    if not provider:
+        return []
+    return [{"adapter": a.adapter_name, "state": a.state, "task_id": a.task_id,
+             "base_model": a.base_model, "error": a.error} for a in b.inference.list_adapters(provider)]
+
+
+def chat_agent(adapter_name: str, message: str) -> dict[str, Any]:
+    """Chat with a deployed fine-tuned adapter through the inference broker."""
+    b = broker("testnet")
+    svcs = b.fine_tuning.list_service()
+    if not svcs:
+        raise ValueError("no fine-tuning provider registered")
+    return b.inference.chat_with_fine_tuned_model(svcs[0].provider, adapter_name, message)
 
 
 def fund_provider(provider_address: str, service_type: str, amount_wei: int, network: str = "testnet") -> str:
