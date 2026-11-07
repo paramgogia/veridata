@@ -46,7 +46,7 @@ def _b64json(s: str) -> dict:
 def x402_license(ds_id: int, request: Request, x_payment: str = Header(default=""), x_client: str = Header(default=""),
                  db: Session = Depends(get_db)):
     d, seller = _dataset(db, ds_id)
-    price = wc.usdt_price(d.price)
+    price = wc.usdt_price(d.price, d.price_usdt)
     if not x_payment:
         try:
             req = wc.requirements(d.id, seller, price, str(request.url), d.title)
@@ -115,5 +115,6 @@ def wc_status(db: Session = Depends(get_db)):
 @router.get("/whitechain/price/{ds_id}")
 def wc_price(ds_id: int, db: Session = Depends(get_db)):
     d, seller = _dataset(db, ds_id)
-    return {"dataset_id": d.id, "usdt_units": wc.usdt_price(d.price), "usdt": wc.usdt_price(d.price) / 1e6, "seller": seller,
+    units = wc.usdt_price(d.price, d.price_usdt)
+    return {"dataset_id": d.id, "usdt_units": units, "usdt": units / 1e6, "seller_set": bool(d.price_usdt), "seller": seller,
             "enabled": wc.enabled()}

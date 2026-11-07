@@ -88,6 +88,7 @@ class PublishBody(BaseModel):
     tags: list[str] = []
     location: str = ""
     price: int  # gwei
+    price_usdt: float | None = None  # optional USDT price for the gasless Whitechain checkout
 
 
 @router.post("/datasets")
@@ -96,6 +97,8 @@ def prepare_publish(body: PublishBody, request: Request, user: User = Depends(au
         raise HTTPException(400, "select at least one sample")
     if body.price < 0:
         raise HTTPException(400, "bad price")
+    if body.price_usdt is not None and not (0 < body.price_usdt <= 100_000):
+        raise HTTPException(400, "USDT price must be between 0 and 100,000")
     samples = db.query(Sample).filter(Sample.id.in_(body.sample_ids)).all()
     if len(samples) != len(set(body.sample_ids)):
         raise HTTPException(404, "some samples not found")
@@ -110,7 +113,8 @@ def prepare_publish(body: PublishBody, request: Request, user: User = Depends(au
     root = crypto.merkle_root(leaves)
     scores = [s.quality["quality_score"] for s in samples if s.quality]
     d = Dataset(title=body.title[:200], description=body.description[:4000], owner_id=user.id, categories=body.categories,
-                tags=body.tags[:20], location=body.location[:120], price=body.price, content_root=root, sample_count=len(samples),
+                tags=body.tags[:20], location=body.location[:120], price=body.price,
+                price_usdt=int(round(body.price_usdt * 1_000_000)) if body.price_usdt else 0, content_root=root, sample_count=len(samples),
                 quality_score=round(sum(scores) / len(scores), 1) if scores else 0, status="pending",
                 sensor_types=sorted({k for s in samples for k in (s.sensors or {}).keys()} | ({"rfid"} if any(s.rfid for s in samples) else set()) | {"camera"}),
                 capture_start=min(s.captured_at for s in samples), capture_end=max(s.captured_at for s in samples))

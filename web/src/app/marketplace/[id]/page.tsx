@@ -127,7 +127,7 @@ export default function DatasetDetail() {
             <div className="space-y-3 p-4 text-sm">
               <ul className="list-inside list-disc space-y-1 text-xs text-muted">
                 <li>License: {d.license}. Not resellable or transferable.</li>
-                <li>Training happens inside the Veridata Training Room; media is decrypted in memory only.</li>
+                <li>Training happens inside the Argus Training Room; media is decrypted in memory only.</li>
                 <li>No raw download, file browser or notebook. Trained weights are exportable.</li>
                 <li>Every access attempt is written to the audit log.</li>
               </ul>
@@ -142,7 +142,10 @@ export default function DatasetDetail() {
         <div className="space-y-6">
           <Card className="p-5">
             <div className="flex items-baseline justify-between">
-              <div className="text-2xl font-semibold tabular-nums">{eth(d.price)}</div>
+              <div>
+                <div className="text-2xl font-semibold tabular-nums">{eth(d.price)}</div>
+                {d.price_usdt > 0 && <div className="text-xs text-muted tabular-nums">or {+Number(d.price_usdt).toFixed(6)} USDT · no gas</div>}
+              </div>
               <span className="text-xs text-muted">one-time · training license</span>
             </div>
             <div className="mt-4 space-y-3">
@@ -150,7 +153,7 @@ export default function DatasetDetail() {
                 <>
                   <Badge tone="ok">{own ? "You own this dataset" : "Licensed"}</Badge>
                   {wcTx && (
-                    <Note tone="chain">Paid {wcTx.usdt} USDT, gas {(wcTx.gas_cost_wei / 1e18).toFixed(6)} WBT covered by Veridata.{" "}
+                    <Note tone="chain">Paid {wcTx.usdt} USDT, gas {(wcTx.gas_cost_wei / 1e18).toFixed(6)} WBT covered by Argus.{" "}
                       <a className="text-chain hover:underline" href={wcTx.explorer} target="_blank" rel="noreferrer">View on Whitechain explorer</a></Note>
                   )}
                   {d.license_record && (
@@ -177,14 +180,14 @@ export default function DatasetDetail() {
                         <Zap className="h-4 w-4" /> Pay {wcPrice.usdt} USDT on Whitechain · no gas
                       </Button>
                       <p className="text-[11px] leading-relaxed text-faint">
-                        You sign one message (EIP-3009); Veridata&apos;s relayer pays the gas. Same x402 endpoint AI agents use. You need USDT only, no WBT.
+                        You sign one message (EIP-3009); Argus&apos;s relayer pays the gas. Same x402 endpoint AI agents use. You need USDT only, no WBT.
                       </p>
                     </div>
                   )}
                 </>
               )}
               <ErrorNote>{err}</ErrorNote>
-              <p className="text-[11px] leading-relaxed text-faint">5% platform fee. On-chain payments split seller/treasury atomically in Veridata.sol.</p>
+              <p className="text-[11px] leading-relaxed text-faint">5% platform fee. On-chain payments split seller/treasury atomically in the Argus contract (Veridata.sol).</p>
             </div>
           </Card>
           <ProofCard d={d} />

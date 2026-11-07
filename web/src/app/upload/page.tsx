@@ -1,5 +1,5 @@
 "use client";
-import { Check, Cpu, FileUp, Fingerprint, Send, ShieldCheck, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { Check, Cpu, Fingerprint, Send, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -12,7 +12,7 @@ import { sendVeridata, txErr } from "@/lib/chain";
 import { eth, toGwei, toWei } from "@/lib/format";
 import { useSession } from "@/lib/session";
 
-const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "rfid-tagged", "industrial", "infrastructure"];
+const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "rfid-tagged", "industrial", "infrastructure", "logistics", "cold-chain", "recycling", "presence"];
 const STEPS = ["Source", "Capture", "Describe", "Verify", "Publish"];
 
 export default function UploadPage() {
@@ -34,7 +34,6 @@ function Upload() {
   const reqData = useApi<any>(requestId ? `/api/requests/${requestId}` : null);
   const [step, setStep] = useState(0);
   const [devId, setDevId] = useState<string | null>(sp.get("device"));
-  const [importMode, setImportMode] = useState(false);
   const [samples, setSamples] = useState<any[]>([]);
   const myDevices = (devices.data || []).filter((d) => d.status === "registered");
   const dev = myDevices.find((d) => d.id === devId);
@@ -68,7 +67,7 @@ function Upload() {
       {req && <RequestSpec req={req} />}
 
       {step === 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="mx-auto max-w-2xl">
           <Card className="p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Cpu className="h-4 w-4" /> Capture with a registered device</div>
             {myDevices.length === 0 ? (
@@ -76,7 +75,7 @@ function Upload() {
             ) : (
               <div className="space-y-2">
                 {myDevices.map((d) => (
-                  <button key={d.id} onClick={() => { setDevId(d.id); setImportMode(false); }} className={cx("flex w-full items-center justify-between rounded-xl border p-3 text-left", devId === d.id && !importMode ? "border-accent/50 bg-accent/5" : "border-line hover:border-faint/60")}>
+                  <button key={d.id} onClick={() => setDevId(d.id)} className={cx("flex w-full items-center justify-between rounded-xl border p-3 text-left", devId === d.id ? "border-accent/50 bg-accent/5" : "border-line hover:border-faint/60")}>
                     <div>
                       <div className="text-sm font-medium">{d.name}</div>
                       <div className="font-mono text-[11px] text-muted">{d.id}</div>
@@ -86,12 +85,7 @@ function Upload() {
                 ))}
               </div>
             )}
-            <Button variant="primary" className="mt-4 w-full" disabled={!devId} onClick={() => { setImportMode(false); setStep(1); }}>Connect & preview</Button>
-          </Card>
-          <Card className="p-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><FileUp className="h-4 w-4" /> Import a file</div>
-            <p className="text-xs leading-relaxed text-muted">Imported files are encrypted and quality-checked but carry <b>no device signature</b>. They can be published as unverified provenance and cannot satisfy requests that require signed captures.</p>
-            <Button className="mt-4 w-full" onClick={() => { setImportMode(true); setStep(1); }}>Import media</Button>
+            <Button variant="primary" className="mt-4 w-full" disabled={!devId} onClick={() => setStep(1)}>Connect & preview</Button>
           </Card>
         </div>
       )}
@@ -99,9 +93,7 @@ function Upload() {
       {step === 1 && (
         <div className="space-y-4">
           <Card className="p-4">
-            {importMode ? (
-              <ImportBox onImported={(s) => setSamples((x) => [s, ...x])} />
-            ) : dev ? (
+            {dev ? (
               <DeviceLive dev={dev} onCaptured={(s) => setSamples((x) => [s, ...x])}
                 captureExtra={{ label: req?.spec?.labels?.[0] || "", categories: req ? [req.category].filter((c: string) => CATS.includes(c)) : [] }} />
             ) : (
@@ -138,37 +130,6 @@ function RequestSpec({ req }: { req: any }) {
   );
 }
 
-function ImportBox({ onImported }: { onImported: (s: any) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const onFiles = async (files: FileList | null) => {
-    if (!files) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      for (const f of Array.from(files).slice(0, 20)) {
-        const fd = new FormData();
-        fd.append("file", f);
-        onImported(await api("/api/samples/import", { method: "POST", body: fd }));
-      }
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line px-6 py-14 text-center hover:border-faint/60"
-      onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); onFiles(e.dataTransfer.files); }}>
-      <UploadCloud className="h-6 w-6 text-faint" />
-      <div className="text-sm">{busy ? "Encrypting & uploading…" : "Drop JPEG/PNG files or click to choose"}</div>
-      <div className="text-xs text-muted">Max 8 MB each · stored AES-256-GCM encrypted</div>
-      <input type="file" accept="image/jpeg,image/png" multiple className="hidden" onChange={(e) => onFiles(e.target.files)} />
-      <ErrorNote>{err}</ErrorNote>
-    </label>
-  );
-}
-
 function SessionStrip({ samples, onRemove }: { samples: any[]; onRemove: (id: string) => void }) {
   const [open, setOpen] = useState<any>(null);
   if (!samples.length) return null;
@@ -179,6 +140,7 @@ function SessionStrip({ samples, onRemove }: { samples: any[]; onRemove: (id: st
         {samples.map((s) => (
           <div key={s.id} className={cx("relative w-28 shrink-0 cursor-pointer overflow-hidden rounded-lg border", open?.id === s.id ? "border-accent/60" : "border-line")} onClick={() => setOpen(s)}>
             <img src={url(s.preview_url)} alt="" className="aspect-[4/3] w-full object-cover" />
+            {String(s.media_type || "").startsWith("video/") && <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[9px] font-semibold text-white">▶ VIDEO</span>}
             <div className="flex items-center justify-between px-1.5 py-1 text-[10px]">
               {s.signed ? <span className="flex items-center gap-0.5 text-ok"><Fingerprint className="h-3 w-3" />signed</span> : <span className="text-warn">unsigned</span>}
               <button onClick={(e) => { e.stopPropagation(); onRemove(s.id); }} className="text-faint hover:text-bad"><Trash2 className="h-3 w-3" /></button>
@@ -335,7 +297,10 @@ function Publish({ samples }: { samples: any[] }) {
   const { chain, uploadFee, refresh } = useSession();
   const { mode, picker, contract } = useSettlement();
   const ok = samples.filter((s) => s.status === "verified");
-  const [f, setF] = useState({ title: "", description: samples[0]?.description || "", price: "0.002", location: "", tags: "" });
+  const [f, setF] = useState({ title: "", description: samples[0]?.description || "", price: "0.002", usdt: "", location: "", tags: "" });
+  const usdtPerEth = 100;  // matches WHITECHAIN_USDT_PER_ETH default
+  const autoUsdt = Math.max(0.000001, Number(f.price || 0) * usdtPerEth);
+  const usdt = f.usdt.trim() ? Number(f.usdt) : autoUsdt;
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const cats = Array.from(new Set(ok.flatMap((s) => s.categories || [])));
@@ -343,7 +308,7 @@ function Publish({ samples }: { samples: any[] }) {
     setErr(null);
     try {
       setBusy("Preparing dataset & Merkle root…");
-      const prep = await api("/api/datasets", { method: "POST", json: { title: f.title, description: f.description, sample_ids: ok.map((s) => s.id), categories: cats, tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), location: f.location, price: toGwei(f.price) } });
+      const prep = await api("/api/datasets", { method: "POST", json: { title: f.title, description: f.description, sample_ids: ok.map((s) => s.id), categories: cats, tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), location: f.location, price: toGwei(f.price), ...(f.usdt.trim() ? { price_usdt: Number(f.usdt) } : {}) } });
       let tx = "";
       if (mode === "onchain") {
         setBusy("Confirm publishDataset in your wallet…");
@@ -367,12 +332,16 @@ function Publish({ samples }: { samples: any[] }) {
         <Field label="Dataset title"><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Retail shelf stock-outs with RFID SKUs — Pune" /></Field>
         <Field label="Description"><textarea className="textarea" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="License price (ETH)"><input className="input" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
-          <Field label="Capture location"><input className="input" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="City, region" /></Field>
+          <Field label="License price (ETH)" hint="Sepolia checkout"><input className="input" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+          <Field label="License price (USDT)" hint="Whitechain · buyer pays no gas">
+            <input className="input" inputMode="decimal" value={f.usdt} onChange={(e) => setF({ ...f, usdt: e.target.value.replace(/[^0-9.]/g, "") })}
+              placeholder={`auto: ${+autoUsdt.toFixed(6)}`} />
+          </Field>
         </div>
+        <Field label="Capture location"><input className="input" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="City, region" /></Field>
         <Field label="Tags" hint="comma separated"><input className="input" value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} /></Field>
         <div className="flex flex-wrap gap-1">{cats.map((c) => <Badge key={c} tone="accent">{c}</Badge>)}</div>
-        <Note>License terms: exclusive, non-transferable training license. Buyers train inside Veridata and can export weights; raw media is never downloadable.</Note>
+        <Note>License terms: exclusive, non-transferable training license. Buyers train inside Argus and can export weights; raw media is never downloadable.</Note>
       </Card>
       <Card className="h-fit space-y-4 p-5">
         <div className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-ok" /> {ok.length} verified samples</div>
@@ -380,6 +349,8 @@ function Publish({ samples }: { samples: any[] }) {
           <div className="flex justify-between"><span className="text-muted">Upload fee</span><span className="tabular-nums">{eth(chain?.uploadFeeWei ? Number(BigInt(chain.uploadFeeWei) / 1_000_000_000n) : uploadFee)}</span></div>
           <div className="flex justify-between"><span className="text-muted">Your price</span><span className="tabular-nums">{f.price} ETH</span></div>
           <div className="flex justify-between"><span className="text-muted">You receive per sale</span><span className="tabular-nums">{(Number(f.price) * 0.95).toFixed(5)} ETH</span></div>
+          <div className="flex justify-between"><span className="text-muted">USDT price {f.usdt.trim() ? "" : "(auto)"}</span><span className="tabular-nums">{+usdt.toFixed(6)} USDT</span></div>
+          <div className="flex justify-between"><span className="text-muted">You receive per USDT sale</span><span className="tabular-nums">{+(usdt * 0.95).toFixed(6)} USDT</span></div>
         </div>
         {picker}
         <Button variant={mode === "onchain" ? "chain" : "primary"} className="w-full" onClick={go} loading={!!busy} disabled={!f.title || !ok.length}>
