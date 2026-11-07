@@ -191,7 +191,7 @@ def ft_status() -> dict[str, Any]:
 
 def _ft_refresh() -> dict[str, Any]:
     """One full status refresh; may take a while and runs inside a timeout guard."""
-    out: dict[str, Any] = {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {}, "tasks": [], "error": ""}
+    out: dict[str, Any] = {"enabled": enabled(), "network": "testnet", "provider": "", "funding": {}, "tasks": [], "run": FT_RUN, "error": ""}
     if not enabled():
         return out
     try:
@@ -229,6 +229,118 @@ def _ft_refresh() -> dict[str, Any]:
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {str(e)[:160]}"
     return out
+
+
+# ---------------- fine-tuning run management (app-driven, retry-resilient) ----------------
+
+FT_BASE_MODEL = "Qwen2.5-0.5B-Instruct"
+DEFAULT_FT_PARAMS = {"neftune_noise_alpha": 5.0, "num_train_epochs": 3,
+                     "per_device_train_batch_size": 4, "learning_rate": 0.0001, "max_steps": 20}
+FT_POLL_SECONDS = 30
+
+FT_RUN: dict[str, Any] = {"status": "idle", "stage": "", "task_id": "", "dataset_id": None,
+                          "started_at": 0.0, "error": "", "logs": []}
+
+
+def _log_run(msg: str) -> None:
+    FT_RUN["logs"] = (FT_RUN["logs"] or [])[-49:] + [f"[{time.strftime('%H:%M:%S')}] {msg}"]
+
+
+def _retry(fn, tries: int = 3, wait_s: int = 20, label: str = "call"):
+    """Retry a 0G call — the provider hosts and RPC flap with SSL EOFs and disconnects."""
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            if i == tries - 1:
+                raise
+            _log_run(f"{label} failed ({type(e).__name__}) — retry {i + 2}/{tries} in {wait_s}s")
+            time.sleep(wait_s)
+
+
+def run_finetune(dataset_id: int, network: str = "testnet") -> dict[str, Any]:
+    """The full TEE fine-tuning flow, blocking. Mirrors scripts/zerog_finetune.py
+    but with retries and progress in FT_RUN (surfaced by GET /api/zerog/ft)."""
+    import json as _json
+    from .db import Sample, SessionLocal
+    FT_RUN.update(status="running", stage="export", task_id="", dataset_id=dataset_id,
+                  started_at=time.time(), error="", logs=[])
+    try:
+        _log_run(f"run started for dataset {dataset_id}")
+        db = SessionLocal()
+        samples = db.query(Sample).filter(Sample.dataset_id == dataset_id, Sample.label != "").all()
+        db.close()
+        if not samples:
+            raise ValueError(f"dataset {dataset_id} has no labelled samples")
+        out = config.DATA / f"ft_dataset_{dataset_id}.jsonl"
+        with out.open("w") as f:
+            for s in samples:
+                f.write(_json.dumps({"prompt": f"Describe this captured scene for a data marketplace: {s.description}",
+                                     "completion": s.label}) + "\n")
+        _log_run(f"exported {len(samples)} samples → {out.name}")
+
+        FT_RUN["stage"] = "upload"
+        b = broker(network)
+        svcs = _retry(b.fine_tuning.list_service, label="list FT providers")
+        if not svcs:
+            raise ValueError("no fine-tuning provider registered")
+        provider = svcs[0].provider
+        up = _retry(lambda: b.fine_tuning.upload_dataset_to_tee(provider, str(out)), label="TEE dataset upload")
+        ds_hash = up.get("datasetHash") or up.get("dataset_hash") or up.get("hash")
+        if not ds_hash:
+            raise ValueError(f"no dataset hash in upload response: {list(up)}")
+        _log_run(f"dataset in TEE: {str(ds_hash)[:18]}…")
+
+        FT_RUN["stage"] = "task"
+        params = config.DATA / "ft_training_params.json"
+        params.write_text(_json.dumps(DEFAULT_FT_PARAMS))
+        task_id = _retry(lambda: b.fine_tuning.create_task(provider, FT_BASE_MODEL, str(ds_hash), str(params)),
+                         label="create_task")
+        FT_RUN["task_id"] = task_id
+        _log_run(f"task created: {task_id}")
+
+        FT_RUN["stage"] = "training"
+        while True:
+            st = _retry(lambda: b.fine_tuning.get_task(provider, task_id), label="get_task")
+            FT_RUN["stage"] = f"training:{getattr(st, 'progress', '?')}"
+            if getattr(st, "deliver_index", None) or getattr(st, "progress", "") == "Delivered":
+                break
+            time.sleep(FT_POLL_SECONDS)
+        _log_run("training delivered by provider")
+
+        FT_RUN["stage"] = "acknowledge"
+        out_dir = config.DATA / "0g_adapters"
+        out_dir.mkdir(exist_ok=True)
+        _retry(lambda: b.fine_tuning.acknowledge_model(provider, task_id, str(out_dir)), label="acknowledge_model")
+        _log_run("model acknowledged on-chain")
+
+        FT_RUN["stage"] = "settle"
+        while True:
+            st = _retry(lambda: b.fine_tuning.get_task(provider, task_id), label="get_task")
+            if getattr(st, "progress", "") == "Finished":
+                break
+            time.sleep(FT_POLL_SECONDS)
+        _log_run("fees settled, decryption key on contract")
+
+        FT_RUN["stage"] = "decrypt"
+        enc = out_dir / f"lora_model_{task_id}.zip"
+        dec = out_dir / f"adapter_{task_id}_decrypted.zip"
+        b.fine_tuning.decrypt_model(provider, task_id, str(enc), str(dec))
+        _log_run(f"adapter decrypted: {dec.name}")
+        FT_RUN.update(status="done", stage="done")
+        return {"ok": True, "task_id": task_id, "adapter": str(dec)}
+    except Exception as e:
+        FT_RUN.update(status="error", error=f"{type(e).__name__}: {str(e)[:200]}")
+        _log_run(f"RUN FAILED: {FT_RUN['error']}")
+        return {"ok": False, "error": FT_RUN["error"]}
+
+
+def start_finetune(dataset_id: int, network: str = "testnet") -> dict[str, Any]:
+    """Kick off a fine-tuning run in a background thread (one at a time)."""
+    if FT_RUN.get("status") == "running":
+        return {"started": False, "error": "a fine-tuning run is already in progress"}
+    threading.Thread(target=run_finetune, args=(dataset_id, network), daemon=True).start()
+    return {"started": True}
 
 
 def fund_provider(provider_address: str, service_type: str, amount_wei: int, network: str = "testnet") -> str:

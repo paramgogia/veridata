@@ -1,5 +1,5 @@
 "use client";
-import { FlaskConical, Plus, Search } from "lucide-react";
+import { FlaskConical, Plus, Search, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -105,9 +105,25 @@ function Workspaces() {
 
 function ZeroGPanel() {
   const ft = useApi<any>("/api/zerog/ft", [], 15000);
+  const [ds, setDs] = useState("1");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   if (!ft.data) return <Card><CardHeader title="0G TEE fine-tuning" sub="loading…" /></Card>;
   const d = ft.data;
   const funded = (d.funding?.ledger_total_0g || 0) > 0;
+  const run = d.run || {};
+  const running = run.status === "running";
+  const start = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/api/zerog/ft/tasks", { method: "POST", json: { dataset_id: Number(ds) } });
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Card>
       <CardHeader
@@ -115,9 +131,28 @@ function ZeroGPanel() {
         sub={d.enabled
           ? `Provider ${d.provider ? `${d.provider.slice(0, 8)}…` : "none"} · wallet ${d.funding?.wallet_0g} 0G · ledger ${d.funding?.ledger_total_0g} 0G`
           : "0G wallet key not configured"}
-        right={d.tasks?.length > 0 ? <Badge tone={d.tasks[0].deliver_index ? "ok" : "warn"}>{d.tasks[0].progress || "queued"}</Badge> : funded ? <Badge>ready</Badge> : <Badge tone="warn">unfunded</Badge>}
+        right={running
+          ? <Badge tone="warn">{run.stage || "running"}</Badge>
+          : d.tasks?.length > 0 ? <Badge tone={d.tasks[0].deliver_index ? "ok" : "warn"}>{d.tasks[0].progress || "queued"}</Badge>
+            : funded ? <Badge>ready</Badge> : <Badge tone="warn">unfunded</Badge>}
       />
       <div className="divide-y divide-line">
+        <div className="flex items-center gap-2 px-5 py-3">
+          <Field label="Dataset id" className="w-20"><input className="input" value={ds} onChange={(e) => setDs(e.target.value)} /></Field>
+          <Button variant="primary" size="sm" onClick={start} loading={busy} disabled={running || !funded}>
+            <Sparkles className="h-3.5 w-3.5" /> Fine-tune in TEE
+          </Button>
+        </div>
+        {err && <div className="px-5 py-2"><ErrorNote>{err}</ErrorNote></div>}
+        {running && (
+          <div className="px-5 py-3">
+            <div className="text-xs font-medium">Run: dataset {run.dataset_id} · task {run.task_id ? `${run.task_id.slice(0, 8)}…` : "—"}</div>
+            <div className="mt-1 max-h-28 overflow-y-auto space-y-0.5 rounded-md bg-bg p-2 font-mono text-[10px] leading-relaxed text-muted">
+              {(run.logs || []).map((l: string, i: number) => <div key={i}>{l}</div>)}
+              {!(run.logs || []).length && <div>starting…</div>}
+            </div>
+          </div>
+        )}
         {(d.tasks || []).map((t: any) => (
           <div key={t.id} className="flex items-center justify-between gap-2 px-5 py-2.5">
             <div className="min-w-0">
@@ -129,10 +164,10 @@ function ZeroGPanel() {
             </div>
           </div>
         ))}
-        {(!d.tasks || d.tasks.length === 0) && (
+        {(!d.tasks || d.tasks.length === 0) && !running && (
           <div className="px-5 py-4 text-xs text-muted">
             {d.error ? `0G pipeline: ${d.error}` : funded
-              ? "No fine-tuning tasks yet — run backend/scripts/zerog_finetune.py <dataset_id> to train in a TEE."
+              ? "No fine-tuning tasks yet — pick a dataset id above and fine-tune it inside a 0G TEE."
               : "Funding: create the 0G compute ledger (3 0G) and fund the provider (1 0G) to train in a TEE. See README → 0G integration."}
           </div>
         )}

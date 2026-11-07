@@ -116,9 +116,27 @@ def config_view():
 
 @router.get("/zerog/ft")
 def zerog_ft_status():
-    """Live status of the 0G TEE fine-tuning pipeline: funding + provider tasks."""
+    """Live status of the 0G TEE fine-tuning pipeline: funding + provider tasks + run state."""
     from .. import zerog
     return zerog.ft_status()
+
+
+class FtRunBody(BaseModel):
+    dataset_id: int
+
+
+@router.post("/zerog/ft/tasks")
+def zerog_ft_run(body: FtRunBody, request: Request, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    """Start a 0G TEE fine-tuning run for a dataset (one run at a time)."""
+    from .. import zerog
+    if not zerog.enabled():
+        raise HTTPException(503, "0G wallet not configured")
+    out = zerog.start_finetune(body.dataset_id)
+    if not out.get("started"):
+        raise HTTPException(409, out.get("error", "run already in progress"))
+    audit(db, user.address, "zerog.finetune.start", str(body.dataset_id), {}, auth.client_ip(request))
+    db.commit()
+    return out
 
 
 @router.get("/stats")
