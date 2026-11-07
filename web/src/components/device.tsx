@@ -1,7 +1,7 @@
 "use client";
-import { Camera, Droplets, FlaskConical, Laptop, Nfc, Radio, ScanLine, Tag, Thermometer, Video, Wifi, WifiOff, X } from "lucide-react";
+import { Camera, Circle, Droplets, FlaskConical, Laptop, Nfc, Radio, ScanLine, Tag, Thermometer, Video, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, url, WS_BASE } from "@/lib/api";
+import { api, API_BASE, getToken, url, WS_BASE } from "@/lib/api";
 import { Badge, Button, cx, ErrorNote } from "./ui";
 
 export type Telemetry = {
@@ -111,41 +111,68 @@ export function LiveStream({ devId, simulated, className, onDown }: { devId: str
 }
 
 /** Fallback camera: the laptop/phone camera via getUserMedia (needs localhost or HTTPS). */
-export type BrowserCamHandle = { grab: () => Promise<string | null> };
+export type BrowserClip = { video: string; keyframe: string | null };
+export type BrowserCamHandle = { grab: () => Promise<string | null>; record: (seconds: number) => Promise<BrowserClip | null> };
+
+const blobToDataUrl = (b: Blob) =>
+  new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result));
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(b);
+  });
 
 export function BrowserCamera({ camRef, className }: { camRef: { current: BrowserCamHandle | null }; className?: string }) {
   const video = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    let stream: MediaStream | null = null;
     let stop = false;
     (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't access a camera here (use localhost or HTTPS).");
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
         if (stop) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
         if (video.current) { video.current.srcObject = stream; await video.current.play().catch(() => {}); }
         setReady(true);
       } catch (e: any) {
         setErr(e?.name === "NotAllowedError" ? "Camera permission denied: allow camera access in the browser." : e?.message || String(e));
       }
     })();
-    camRef.current = {
-      grab: async () => {
-        const v = video.current;
-        if (!v || !v.videoWidth) return null;
-        const c = document.createElement("canvas");
-        c.width = v.videoWidth;
-        c.height = v.videoHeight;
-        c.getContext("2d")!.drawImage(v, 0, 0);
-        return c.toDataURL("image/jpeg", 0.9);
-      },
+    const grab = async () => {
+      const v = video.current;
+      if (!v || !v.videoWidth) return null;
+      const c = document.createElement("canvas");
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      c.getContext("2d")!.drawImage(v, 0, 0);
+      return c.toDataURL("image/jpeg", 0.9);
     };
+    const record = async (seconds: number): Promise<BrowserClip | null> => {
+      const stream = streamRef.current;
+      if (!stream || typeof MediaRecorder === "undefined") return null;
+      const mime = ["video/webm;codecs=vp8", "video/webm", "video/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 1_500_000 });
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      const done = new Promise<void>((res) => { rec.onstop = () => res(); });
+      let keyframe: string | null = null;
+      rec.start(250);
+      setTimeout(async () => { keyframe = await grab(); }, (seconds * 1000) / 2);  // mid-clip still
+      await new Promise((r) => setTimeout(r, seconds * 1000));
+      rec.stop();
+      await done;
+      const blob = new Blob(chunks, { type: (mime || "video/webm").split(";")[0] });
+      return { video: await blobToDataUrl(blob), keyframe: keyframe || (await grab()) };
+    };
+    camRef.current = { grab, record };
     return () => {
       stop = true;
       camRef.current = null;
-      stream?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
   }, [camRef]);
   return (
@@ -245,11 +272,20 @@ export function RfidPanel({ t, marked, onClear, onAssociated }: { t: Telemetry |
   );
 }
 
-export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getImage, browser, testSensors }: { devId: string; onCaptured: (s: any) => void; extra?: Record<string, unknown>; marked?: MarkedTag; disabled?: boolean; getImage?: () => Promise<string | null>; browser?: boolean; testSensors?: boolean }) {
-  const [busy, setBusy] = useState(false);
+export const VIDEO_SECONDS = 5;
+
+export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getImage, getClip, browser, testSensors }: { devId: string; onCaptured: (s: any) => void; extra?: Record<string, unknown>; marked?: MarkedTag; disabled?: boolean; getImage?: () => Promise<string | null>; getClip?: (seconds: number) => Promise<BrowserClip | null>; browser?: boolean; testSensors?: boolean }) {
+  const [busy, setBusy] = useState<"photo" | "video" | null>(null);
+  const [left, setLeft] = useState(0);  // recording countdown
   const [err, setErr] = useState<string | null>(null);
-  const go = async () => {
-    setBusy(true);
+  const base = () => ({ attach_rfid: true, rfid_uids: marked ? [marked.uid] : [], ...extra, ...(testSensors ? { test_sensors: true } : {}) });
+  const countdown = (sec: number) => {
+    setLeft(sec);
+    const t = setInterval(() => setLeft((x) => (x <= 1 ? (clearInterval(t), 0) : x - 1)), 1000);
+    return () => { clearInterval(t); setLeft(0); };
+  };
+  const photo = async () => {
+    setBusy("photo");
     setErr(null);
     try {
       let image_b64: string | undefined;
@@ -258,31 +294,84 @@ export function CaptureButton({ devId, onCaptured, extra, marked, disabled, getI
         if (!img) throw new Error("This device's camera isn't ready yet.");
         image_b64 = img;
       }
+      onCaptured(await api(`/api/devices/${devId}/capture`, { method: "POST", json: { ...base(), ...(image_b64 ? { image_b64 } : {}) } }));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const video = async () => {
+    setBusy("video");
+    setErr(null);
+    const stopCountdown = countdown(VIDEO_SECONDS);
+    try {
+      let clip: BrowserClip | null = null;
+      if (browser) {
+        clip = (await getClip?.(VIDEO_SECONDS)) ?? null;  // records in the browser, then uploads
+        if (!clip) throw new Error("This browser can't record video here.");
+        stopCountdown();
+      }
+      // rig camera: the server samples the ESP32-CAM for VIDEO_SECONDS while this request runs
       onCaptured(await api(`/api/devices/${devId}/capture`, {
         method: "POST",
-        json: { attach_rfid: true, rfid_uids: marked ? [marked.uid] : [], ...extra, ...(image_b64 ? { image_b64 } : {}), ...(testSensors ? { test_sensors: true } : {}) },
+        json: { ...base(), kind: "video", seconds: VIDEO_SECONDS, ...(clip ? { video_b64: clip.video, ...(clip.keyframe ? { image_b64: clip.keyframe } : {}) } : {}) },
       }));
     } catch (e: any) {
       setErr(e.message);
     } finally {
-      setBusy(false);
+      stopCountdown();
+      setBusy(null);
     }
   };
+  const suffix = `${browser ? " · this device" : ""}${testSensors ? " · test sensors" : ""}${marked ? ` · tag ${marked.uid}` : ""}`;
   return (
     <div className="space-y-2">
-      <Button variant="primary" className="w-full" onClick={go} loading={busy} disabled={disabled}>
-        <Camera className="h-4 w-4" /> Capture & sign{browser ? " (this device's camera)" : ""}{testSensors ? " · test sensors" : ""}{marked ? ` · tag ${marked.uid}` : ""}
-      </Button>
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="primary" className="w-full" onClick={photo} loading={busy === "photo"} disabled={disabled || busy !== null}>
+          <Camera className="h-4 w-4" /> Capture photo
+        </Button>
+        <Button variant="secondary" className="w-full" onClick={video} loading={busy === "video" && left === 0} disabled={disabled || busy !== null}>
+          {busy === "video" && left > 0
+            ? <><Circle className="h-3.5 w-3.5 animate-pulse fill-bad text-bad" /> Recording… {left}s</>
+            : <><Video className="h-4 w-4" /> Record video ({VIDEO_SECONDS}s)</>}
+        </Button>
+      </div>
+      {suffix && <div className="text-[11px] text-muted">Signing with{suffix}</div>}
       <div className="text-[11px] text-faint">{browser
-        ? "Takes the photo with this device's camera; sensor readings (if the board is online), RFID and the signature work as usual. The manifest records camera: browser."
-        : "Takes a fresh photo, reads the sensor board at the same moment, and signs both together."}</div>
+        ? "Photo or a short clip from this device's camera; sensor readings (if the board is online), RFID and the signature work as usual."
+        : "Photo, or a short clip sampled from the rig camera. Sensor readings are taken at the same moment and signed together with the media."}</div>
       <ErrorNote>{err}</ErrorNote>
     </div>
   );
 }
 
+/** Owner-only playback of a signed video sample (fetched with the session token). */
+export function SampleVideo({ s }: { s: any }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let obj: string | null = null;
+    const tok = getToken();
+    fetch(`${API_BASE}/api/samples/${s.id}/original`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(r.status === 403 ? "only the contributor can play the original clip" : `HTTP ${r.status}`);
+        obj = URL.createObjectURL(await r.blob());
+        setSrc(obj);
+      })
+      .catch((e) => setErr(e.message));
+    return () => { if (obj) URL.revokeObjectURL(obj); };
+  }, [s.id]);
+  if (err) return <div className="text-[11px] text-faint">Video: {err}</div>;
+  if (!src) return <div className="aspect-[4/3] w-full animate-pulse rounded-lg bg-raised/60" />;
+  // eslint-disable-next-line jsx-a11y/media-has-caption
+  return <video src={src} controls loop playsInline className="w-full rounded-lg border border-line bg-black" />;
+}
+
+export const isVideo = (s: any) => String(s?.media_type || s?.manifest?.media?.type || "").startsWith("video/");
+
 export function ManifestView({ s }: { s: any }) {
-  if (!s?.manifest) return <div className="text-xs text-muted">No signed manifest (imported media — no device provenance).</div>;
+  if (!s?.manifest) return <div className="text-xs text-muted">No signed manifest: this sample has no device provenance.</div>;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
@@ -290,7 +379,9 @@ export function ManifestView({ s }: { s: any }) {
         <Badge>manifest {s.manifest_hash.slice(0, 10)}…</Badge>
         {s.manifest?.meta?.test_fields?.length > 0 && <Badge tone="warn">TEST DATA: {s.manifest.meta.test_fields.join(", ")}</Badge>}
         {s.manifest?.meta?.camera === "browser" && <Badge tone="warn">camera: this device</Badge>}
+        {isVideo(s) && <Badge tone="accent"><Video className="h-3 w-3" /> video · {Number(s.duration_s || s.manifest?.media?.duration_s || 0).toFixed(1)}s · {s.manifest?.media?.frames ?? "?"} frames</Badge>}
       </div>
+      {isVideo(s) && <SampleVideo s={s} />}
       <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted">{JSON.stringify(s.manifest, null, 2)}</pre>
       <div className="break-all font-mono text-[10px] text-faint">sig: {s.signature}</div>
     </div>
@@ -339,6 +430,7 @@ export function DeviceLive({ dev, onCaptured, captureExtra }: { dev: any; onCapt
           onAssociated={(label) => setMarked((m) => (m ? { ...m, label, asset_type: m.asset_type || "product" } : m))} />
         <CaptureButton devId={dev.id} marked={marked} extra={captureExtra} browser={browser} testSensors={testSensors}
           getImage={() => camRef.current?.grab() ?? Promise.resolve(null)}
+          getClip={(sec) => camRef.current?.record(sec) ?? Promise.resolve(null)}
           disabled={!browser && (camDown || (boardOffline && !testSensors))}
           onCaptured={(s) => { onCaptured(s); setMarked(null); }} />
         {!browser && boardOffline && !testSensors && (

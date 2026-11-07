@@ -30,14 +30,16 @@ def dev_key(dev: Device):
 
 
 def build_manifest(dev: Device | None, media: bytes, width: int, height: int, sensors: dict, rfid: list,
-                   meta: dict, captured_at: float | None = None) -> dict[str, Any]:
+                   meta: dict, captured_at: float | None = None, media_type: str = "image/jpeg",
+                   media_extra: dict | None = None) -> dict[str, Any]:
     return {
         "v": 1,
         "capture_id": str(uuid.uuid4()),
         "device_id": dev.id if dev else None,
         "nonce": secrets.token_hex(8),
         "captured_at": round(captured_at or time.time(), 3),
-        "media": {"sha256": crypto.sha256_hex(media), "type": "image/jpeg", "bytes": len(media), "width": width, "height": height},
+        "media": {"sha256": crypto.sha256_hex(media), "type": media_type, "bytes": len(media), "width": width, "height": height,
+                  **(media_extra or {})},
         "sensors": sensors,
         "rfid": rfid,
         "meta": meta,
@@ -53,15 +55,18 @@ def sign_manifest_dev(dev: Device, manifest: dict) -> str:
 def store_sample(db: Session, *, owner_id: int, media: bytes, manifest: dict | None, signature: str, dev: Device | None,
                  label: str = "", description: str = "", keywords: list | None = None, categories: list | None = None,
                  rfid: list | None = None, sensors: dict | None = None, is_demo: bool = False, phash: str = "",
-                 blur_preview: bool = True, media_store: dict | None = None) -> Sample:
+                 blur_preview: bool = True, media_store: dict | None = None, media_type: str = "image/jpeg",
+                 keyframe: bytes | None = None, duration_s: float = 0) -> Sample:
     sid = manifest["capture_id"] if manifest else str(uuid.uuid4())
     if media_store and media_store.get("ref") and media_store.get("wrapped"):
         ref, wrapped = media_store["ref"], media_store["wrapped"]  # already encrypted (+0G-uploaded) by the caller
     else:
         ref, wrapped = storage.put_encrypted(media, sid)
-    preview = storage.make_preview(media, sid, blur=blur_preview)
+    image = keyframe or media  # video samples: previews and image stats come from the keyframe
+    preview = storage.make_preview(image, sid, blur=blur_preview)
     from .quality import image_stats
-    st = image_stats(media)
+    st = image_stats(image)
+    kf_ref, kf_wrapped = storage.put_encrypted(keyframe, f"{sid}:keyframe") if keyframe else ("", "")
     s = Sample(
         id=sid, device_id=dev.id if dev else None, owner_id=owner_id,
         captured_at=manifest["captured_at"] if manifest else time.time(),
@@ -72,9 +77,17 @@ def store_sample(db: Session, *, owner_id: int, media: bytes, manifest: dict | N
         signature=signature, sig_mode=(manifest or {}).get("signer", {}).get("mode", "none") if signature else "none",
         label=label, description=description, keywords=keywords or [], categories=categories or [],
         rfid=rfid or [], sensors=sensors or {}, is_demo=is_demo,
+        media_type=media_type, keyframe_ref=kf_ref, keyframe_wrapped=kf_wrapped, duration_s=duration_s,
     )
     db.add(s)
     return s
+
+
+def sample_image(s: Sample) -> bytes:
+    """The still image used for quality checks, previews and training: the keyframe for videos."""
+    if s.keyframe_ref:
+        return storage.get_decrypted(s.keyframe_ref, s.keyframe_wrapped, f"{s.id}:keyframe")
+    return storage.get_decrypted(s.storage_ref, s.key_wrapped, s.id)
 
 
 def verify_sample(db: Session, s: Sample, media_override: bytes | None = None) -> dict[str, Any]:
@@ -100,6 +113,14 @@ def verify_sample(db: Session, s: Sample, media_override: bytes | None = None) -
 
     step("content_hash", actual == m["media"]["sha256"],
          f"computed {actual[:20]}… {'==' if actual == m['media']['sha256'] else '!='} manifest {m['media']['sha256'][:20]}…")
+    kf_sha = m["media"].get("keyframe_sha256")
+    if kf_sha:
+        try:
+            kf = storage.get_decrypted(s.keyframe_ref, s.keyframe_wrapped, f"{s.id}:keyframe")
+            got = crypto.sha256_hex(kf)
+            step("keyframe_hash", got == kf_sha, f"video keyframe {got[:16]}… {'==' if got == kf_sha else '!='} manifest {kf_sha[:16]}…")
+        except Exception as e:
+            step("keyframe_hash", False, f"keyframe missing or undecryptable: {type(e).__name__}")
     mh = crypto.sha256_hex(crypto.canonical(m))
     step("manifest_hash", mh == s.manifest_hash, f"sha256(canonical manifest) = {mh[:20]}…")
 

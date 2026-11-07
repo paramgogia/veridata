@@ -26,7 +26,7 @@ def sample_view(s: Sample, full: bool = False) -> dict[str, Any]:
         "storage_0g": {"root_media": s.storage_root_media, "root_manifest": s.storage_root_manifest,
                        "tx": s.storage_tx, "resolve_url": f"/api/zerog/manifest/{s.storage_root_manifest}" if s.storage_root_manifest else None},
         "preview_url": f"/api/previews/{s.preview_file}" if s.preview_file else None, "is_demo": s.is_demo,
-        "quality": s.quality,
+        "quality": s.quality, "media_type": s.media_type or "image/jpeg", "duration_s": s.duration_s or 0,
     }
     if full:
         d["manifest"] = s.manifest
@@ -34,12 +34,17 @@ def sample_view(s: Sample, full: bool = False) -> dict[str, Any]:
     return d
 
 
+def _usdt(ds: Dataset) -> float:
+    from .chain.whitechain import usdt_price
+    return usdt_price(ds.price or 0, ds.price_usdt) / 1e6
+
+
 def dataset_view(db: Session, ds: Dataset, detail: bool = False) -> dict[str, Any]:
     owner = db.get(User, ds.owner_id)
     d = {
         "id": ds.id, "title": ds.title, "description": ds.description, "owner": user_brief(owner),
         "categories": ds.categories, "tags": ds.tags, "sensor_types": ds.sensor_types, "location": ds.location,
-        "price": ds.price, "license": ds.license, "format": ds.format, "content_root": ds.content_root,
+        "price": ds.price, "price_usdt": _usdt(ds), "license": ds.license, "format": ds.format, "content_root": ds.content_root,
         "sample_count": ds.sample_count, "quality_score": ds.quality_score, "chain_dataset_id": ds.chain_dataset_id,
         "publish_tx": ds.publish_tx, "publish_tx_url": explorer_tx(ds.publish_tx), "mode": ds.mode, "status": ds.status,
         "capture_start": ds.capture_start, "capture_end": ds.capture_end, "is_demo": ds.is_demo, "created_at": ds.created_at,

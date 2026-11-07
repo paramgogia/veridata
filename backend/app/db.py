@@ -84,6 +84,9 @@ class Sample(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), index=True)
     captured_at = Column(Float)
     media_type = Column(String(40), default="image/jpeg")
+    keyframe_ref = Column(String(200), default="")      # video samples: encrypted keyframe JPEG
+    keyframe_wrapped = Column(Text, default="")
+    duration_s = Column(Float, default=0)
     media_sha256 = Column(String(64), index=True)
     media_bytes = Column(Integer)
     width = Column(Integer, default=0)
@@ -123,6 +126,7 @@ class Dataset(Base):
     sensor_types = Column(JSON, default=list)
     location = Column(String(120), default="")
     price = Column(BigInteger, default=0)
+    price_usdt = Column(BigInteger, default=0)  # USDT base units (6 dp) for Whitechain checkout; 0 = derive from ETH price
     license = Column(String(200), default="Exclusive, non-transferable training license (in-platform only)")
     format = Column(String(60), default="JPEG")
     content_root = Column(String(66), default="")

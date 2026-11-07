@@ -119,7 +119,7 @@ def update_meta(sid: str, body: MetaBody, user: User = Depends(auth.current_user
         raise HTTPException(409, "published samples are immutable")
     # Descriptive metadata is editable; signed manifest fields (hash, sensors, RFID at capture) are not.
     if body.label is not None:
-        s.label = body.label[:80]
+        s.label = body.label.strip()[:80]  # "working " and "working" are the same class
     if body.description is not None:
         s.description = body.description[:2000]
     if body.keywords is not None:
@@ -140,8 +140,9 @@ def assess(sid: str, user: User = Depends(auth.current_user), db: Session = Depe
     if not s or s.owner_id != user.id:
         raise HTTPException(404, "sample not found")
     data = storage.get_decrypted(s.storage_ref, s.key_wrapped, s.id)
+    image = provenance.sample_image(s) if s.keyframe_ref else data  # videos are assessed on their keyframe
     others = [p for (p,) in db.query(Sample.phash).filter(Sample.id != s.id, Sample.phash != "").all()]
-    res = quality.assess(data, s.description, s.categories, s.label, others)
+    res = quality.assess(image, s.description, s.categories, s.label, others)
     ver = provenance.verify_sample(db, s, media_override=data)
     res["provenance"] = {"valid": ver["valid"], "signer_mode": ver.get("signer_mode")}
     s.quality = {k: v for k, v in res.items() if k != "img"}
@@ -173,6 +174,8 @@ def tamper(sid: str, db: Session = Depends(get_db)):
     s = db.get(Sample, sid)
     if not s:
         raise HTTPException(404, "sample not found")
+    if s.keyframe_ref:
+        raise HTTPException(400, "the tamper demo works on photo samples; pick a photo")
     original = storage.get_decrypted(s.storage_ref, s.key_wrapped, s.id)
     img = Image.open(io.BytesIO(original)).convert("RGB")
     r, g, b = img.getpixel((0, 0))
@@ -199,7 +202,7 @@ def original(sid: str, user: User | None = Depends(auth.optional_user), db: Sess
         db.commit()
         raise HTTPException(403, "Raw media is not downloadable. Licensed data can only be used inside the Training Room.")
     from fastapi.responses import Response
-    return Response(storage.get_decrypted(s.storage_ref, s.key_wrapped, s.id), media_type="image/jpeg",
+    return Response(storage.get_decrypted(s.storage_ref, s.key_wrapped, s.id), media_type=s.media_type or "image/jpeg",
                     headers={"Cache-Control": "no-store"})
 
 

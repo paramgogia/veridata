@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import auth, crypto, hardware, provenance, quality, zerog
+from .. import video as video_mod
 from ..chain import client as chain
 from ..config import CAM_CAPTURE_URL, CAM_STREAM_URL, DEVICE_CONTROL_URL
 from ..db import Device, RfidTag, Sample, SessionLocal, User, audit, get_db
@@ -245,6 +246,11 @@ class CaptureBody(BaseModel):
     # Demo fallback when the sensor board (or one sensor) is down: fill ONLY the missing readings
     # with test values. Real readings always win. The signed manifest lists every test field.
     test_sensors: bool = False
+    # Video: kind="video" records a short clip. The rig camera is sampled frame by frame on the
+    # server; a browser clip arrives as video_b64 (WebM/MP4) with image_b64 as a fallback keyframe.
+    kind: str = "photo"
+    seconds: float = 5
+    video_b64: str | None = None
 
 
 TEST_TAG_UID = "TEST0001"
@@ -254,6 +260,41 @@ def _test_readings() -> dict:
     import random
     return {"ir": random.random() < 0.5, "temp_c": round(random.uniform(26.0, 30.0), 1),
             "humidity_pct": round(random.uniform(48.0, 65.0), 1)}
+
+
+def _browser_video(b64: str) -> tuple[bytes, str]:
+    import base64
+    if "," in b64[:100]:
+        b64 = b64.split(",", 1)[1]
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "video_b64 is not valid base64")
+    if len(data) > video_mod.MAX_VIDEO_BYTES:
+        raise HTTPException(413, "video larger than 25 MB: record a shorter clip")
+    mime = video_mod.is_supported(data)
+    if not mime:
+        raise HTTPException(400, "browser video must be WebM or MP4")
+    return data, mime
+
+
+async def _record_rig_clip(dev: Device, seconds: float) -> tuple[list[bytes], float]:
+    """Sample the rig camera as fast as it answers for `seconds` (the ESP32-CAM gives ~2-5 fps)."""
+    frames: list[bytes] = []
+    fails = 0
+    t0 = time.time()
+    while time.time() - t0 < seconds and len(frames) < 150:
+        try:
+            frames.append(await hardware.capture_jpeg(dev))
+        except Exception as e:
+            fails += 1
+            if fails >= 4 and not frames:
+                raise HTTPException(502, f"rig camera not answering: {type(e).__name__}")
+        if dev.simulated:
+            await asyncio.sleep(0.12)  # simulated camera answers instantly: keep ~8 fps
+    if len(frames) < 2:
+        raise HTTPException(502, "rig camera returned too few frames for a video")
+    return frames, time.time() - t0
 
 
 def _browser_jpeg(b64: str) -> bytes:
@@ -274,14 +315,38 @@ def _browser_jpeg(b64: str) -> bytes:
 @router.post("/devices/{dev_id}/capture")
 async def capture(dev_id: str, body: CaptureBody, request: Request, user: User = Depends(auth.current_user), db: Session = Depends(get_db)):
     dev = _own(db, dev_id, user)
-    camera = "browser" if body.image_b64 else ("simulated" if dev.simulated else "esp32-cam")
-    if body.image_b64:
+    is_video = body.kind == "video"
+    seconds = max(2.0, min(10.0, float(body.seconds or 5)))
+    camera = "browser" if (body.image_b64 or body.video_b64) else ("simulated" if dev.simulated else "esp32-cam")
+    clip: bytes | None = None
+    media_type, media_extra, duration, tel_start = "image/jpeg", None, 0.0, None
+    if is_video and body.video_b64:  # clip recorded in the browser
+        clip, media_type = _browser_video(body.video_b64)
+        jpeg, nframes = video_mod.keyframe_and_probe(clip, ".webm" if media_type == "video/webm" else ".mp4")
+        if jpeg is None and body.image_b64:
+            jpeg = _browser_jpeg(body.image_b64)  # browser-supplied keyframe if the clip can't be decoded here
+        if jpeg is None:
+            raise HTTPException(400, "could not read a frame from the video")
+        duration = seconds
+    elif is_video:  # rig camera, sampled frame by frame
+        tel_start = _enrich(db, await hardware.telemetry(dev))
+        frames, duration = await _record_rig_clip(dev, seconds)
+        try:
+            clip = video_mod.frames_to_webm(frames, len(frames) / max(duration, 0.1))
+        except Exception as e:
+            raise HTTPException(500, f"video encoding failed: {type(e).__name__}: {str(e)[:120]}")
+        media_type, jpeg, nframes = "video/webm", frames[len(frames) // 2], len(frames)
+    elif body.image_b64:
         jpeg = _browser_jpeg(body.image_b64)
     else:
         try:
             jpeg = await hardware.capture_jpeg(dev)
         except Exception as e:
             raise HTTPException(502, f"capture failed: {type(e).__name__}: {str(e)[:120]}")
+    if is_video:
+        # the keyframe's hash is signed too, so the still used for checks/training is bound to the clip
+        media_extra = {"keyframe_sha256": crypto.sha256_hex(jpeg), "duration_s": round(duration, 2), "frames": nframes}
+    media = clip if is_video else jpeg
     tel = _enrich(db, await hardware.telemetry(dev))
     st = quality.image_stats(jpeg)
     rfid = []
@@ -314,12 +379,15 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
                             ("online+test-data" if board_online else "test-data")}
     if test_fields:
         meta["test_fields"] = test_fields
-    manifest = provenance.build_manifest(dev, jpeg, st["width"], st["height"], sensors, rfid, meta)
+    if tel_start and tel_start.get("online"):  # rig clips: readings at the start and the end of recording
+        meta["sensors_start"] = {k: tel_start.get(k) for k in ("ir", "temp_c", "humidity_pct") if tel_start.get(k) is not None}
+    manifest = provenance.build_manifest(dev, media, st["width"], st["height"], sensors, rfid, meta,
+                                         media_type=media_type, media_extra=media_extra)
     # 0G storage: encrypt + upload the ciphertext BEFORE signing, so the storage
     # root is part of the signed manifest's media block (resolvable independently).
     media_store = None
     if zerog.enabled():
-        media_store = zerog.store_media(jpeg, manifest["capture_id"])
+        media_store = zerog.store_media(media, manifest["capture_id"])
         manifest["media"]["storage"] = {"local": media_store["ref"],
                                         "root_0g": media_store["root"] or "", "tx_0g": media_store["tx"] or ""}
         if media_store.get("error"):
@@ -331,10 +399,11 @@ async def capture(dev_id: str, body: CaptureBody, request: Request, user: User =
             raise HTTPException(502, f"device signing failed: {type(e).__name__}")
     else:
         sig = provenance.sign_manifest_dev(dev, manifest)
-    s = provenance.store_sample(db, owner_id=user.id, media=jpeg, manifest=manifest, signature=sig, dev=dev,
+    s = provenance.store_sample(db, owner_id=user.id, media=media, manifest=manifest, signature=sig, dev=dev,
                                 label=body.label, description=body.description, categories=body.categories,
                                 keywords=body.keywords, rfid=rfid, sensors=sensors, phash=st["phash"], blur_preview=False,
-                                media_store=media_store)
+                                media_store=media_store, media_type=media_type,
+                                keyframe=jpeg if is_video else None, duration_s=round(duration, 2))
     if zerog.enabled():
         try:  # manifest itself goes to 0G too; its root is stored beside the sample
             _mtx, mroot = zerog.upload_bytes(crypto.canonical(manifest), f"{s.id}.manifest.json")
