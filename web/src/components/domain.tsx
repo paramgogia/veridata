@@ -1,5 +1,5 @@
 "use client";
-import { CalendarClock, Cpu, ExternalLink, Fingerprint, Lock, ShieldCheck, Sparkles } from "lucide-react";
+import { CalendarClock, Cpu, Droplets, ExternalLink, Fingerprint, Lock, Nfc, Radio, ShieldCheck, Sparkles, Thermometer, Video } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { api, url } from "@/lib/api";
@@ -27,6 +27,7 @@ export function DemandCard({ r, featured }: { r: Req; featured?: boolean }) {
             </div>
             <div className="text-[15px] font-semibold leading-snug">{r.title}</div>
             <div className="mt-0.5 text-xs text-muted">by {r.buyer?.name}</div>
+            <ReqChips spec={r.spec} />
           </div>
           <div className="text-right">
             <div className="text-[15px] font-semibold tabular-nums">{eth(r.price_per_sample)}</div>
@@ -58,6 +59,23 @@ export function DemandCard({ r, featured }: { r: Req; featured?: boolean }) {
         </div>
       </Card>
     </Link>
+  );
+}
+
+/** What the rig must capture for this request: media type and the sensor readings signed in. */
+export function ReqChips({ spec }: { spec: any }) {
+  const need: string[] = spec?.required_metadata || [];
+  const video = String(spec?.media_format || "").startsWith("video/");
+  const chip = "inline-flex items-center gap-1 rounded-md border border-line bg-raised/50 px-1.5 py-0.5 text-[10px] text-muted";
+  return (
+    <div className="mt-2 flex flex-wrap gap-1">
+      <span className={chip}>{video ? <><Video className="h-3 w-3" /> 5 s video</> : <>photo</>}</span>
+      {need.includes("rfid") && <span className={chip}><Nfc className="h-3 w-3" /> RFID tag</span>}
+      {need.includes("ir") && <span className={chip}><Radio className="h-3 w-3" /> IR presence</span>}
+      {need.includes("temp_c") && <span className={chip}><Thermometer className="h-3 w-3" /> temperature</span>}
+      {need.includes("humidity_pct") && <span className={chip}><Droplets className="h-3 w-3" /> humidity</span>}
+      {spec?.labels?.length > 0 && <span className={chip}>labels: {spec.labels.join(" / ")}</span>}
+    </div>
   );
 }
 

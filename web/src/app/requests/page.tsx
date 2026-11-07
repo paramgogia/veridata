@@ -10,7 +10,7 @@ import { sendVeridata, txErr } from "@/lib/chain";
 import { eth, toGwei } from "@/lib/format";
 import { useSession } from "@/lib/session";
 
-const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "industrial"];
+const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "industrial", "logistics", "cold-chain", "recycling", "presence"];
 
 export default function RequestsPage() {
   return (

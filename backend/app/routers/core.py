@@ -135,6 +135,8 @@ def stats(db: Session = Depends(get_db)):
         "verified_samples": q(Sample).filter(Sample.signature != "").count(),
         "open_requests": q(DataRequest).filter(DataRequest.status == "open").count(),
         "escrow_locked": int(sum(max(0, r.deposited - r.released - r.refunded) for r in q(DataRequest).filter(DataRequest.status == "open").all())),
+        "escrow_onchain": int(sum(max(0, r.deposited - r.released - r.refunded) for r in q(DataRequest).filter(DataRequest.status == "open", DataRequest.mode == "onchain").all())),
+        "onchain_requests": q(DataRequest).filter(DataRequest.status == "open", DataRequest.mode == "onchain").count(),
         "trending_categories": sorted(({"category": k, "demand": v} for k, v in cats.items()), key=lambda x: -x["demand"])[:8],
         "onchain_txs": q(Tx).filter(Tx.mode == "onchain").count(),
     }

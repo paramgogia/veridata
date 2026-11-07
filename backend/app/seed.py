@@ -188,21 +188,78 @@ def seed(reset: bool = False) -> None:
         s.keywords = ["insurance-demo"]
         s.status = "verified"
 
-    spec = lambda **kw: {"media_format": "image/jpeg", "min_resolution": "128x128", "require_device_signature": True, "min_quality": 50, **kw}
-    mk_request(db, north, [fleet], "Heavy rain at night — rural driving footage", "Frames from rural two-lane roads at night in heavy rain. Headlights on, wipers visible acceptable. No identifiable people or licence plates.",
-               "autonomous-driving", 2000, eth(0.0005), 640, 14, spec(conditions="night, heavy rain, rural road", sensors=["camera"], labels=["rain_night"], location="India, rural"))
-    mk_request(db, north, [asha], "500 mango leaves showing visible pest damage", "Close-up images of mango leaves with visible insect feeding damage. One leaf per frame, 10–30 cm distance.",
-               "pest-damage", 500, eth(0.0008), 120, 21, spec(labels=["pest_damage"], required_metadata=["description"], location="Konkan belt"))
-    mk_request(db, retail, [retail], "Shelf stock-out captures with RFID-tagged SKUs", "Shelf bays photographed at stock-out and restock moments. The SKU's RFID tag must be read during the capture session; IR presence reading required.",
-               "retail", 1000, eth(0.0004), 85, 10, spec(labels=["shelf_empty", "shelf_stocked"], required_metadata=["rfid", "ir"], sensors=["camera", "rfid", "ir"]))
-    mk_request(db, insurer, [garage], "Genuine vehicle damage photos for fraud detection", "Device-signed photos of real panel damage. Unsigned or edited images are rejected automatically.",
-               "insurance", 300, eth(0.0015), 41, 30, spec(labels=["dent", "scratch", "cracked_glass"], min_quality=60))
-    mk_request(db, north, [retail], "Anonymous IR occupancy grids — warehouse aisles", "8×8 thermal occupancy grids only. No camera imagery of people.",
-               "occupancy", 800, eth(0.0003), 300, 18, spec(sensors=["ir"], labels=["empty", "occupied_1", "occupied_many"]))
-    mk_request(db, insurer, [garage], "Cracked windshield close-ups", "Windshield cracks and chips, 30–60 cm.", "vehicle-damage", 200, eth(0.002), 190, 4,
-               spec(labels=["cracked_glass"]), created_days_ago=20)
+    seed_demand(db, {"north": north, "retail": retail, "insurer": insurer, "asha": asha, "fleet": fleet, "garage": garage})
     db.commit()
     print(f"seeded: {db.query(Dataset).count()} datasets, {db.query(Sample).count()} samples, {db.query(DataRequest).count()} requests")
+    db.close()
+
+
+# Demo requests built around the actual Argus rig: ESP32-CAM (photo + 5 s video, 320x240),
+# IR presence, DHT temperature/humidity and RC522 RFID. All run on the off-chain demo ledger;
+# requests posted with a wallet lock real Sepolia ETH in Veridata.sol instead.
+DEMO_REQUESTS = [
+    # (buyer, contributors, title, description, category, quantity, price ETH, accepted, days, spec extras)
+    ("retail", ["retail"], "RFID-tagged parcels at the packing station",
+     "One parcel per frame on the packing bench while its RFID tag is read. The IR sensor must confirm the parcel is in place. Trains parcel recognition for automated sorting.",
+     "logistics", 400, 0.0006, 96, 12, {"labels": ["parcel"], "required_metadata": ["rfid", "ir"], "sensors": ["camera", "rfid", "ir"], "min_quality": 55}),
+    ("north", ["asha"], "Cold-chain shelf checks: photo + temperature & humidity",
+     "Pharmacy and dairy shelves photographed with the ambient temperature and humidity signed in at the moment of capture. Used to train spoilage-risk models.",
+     "cold-chain", 600, 0.0005, 210, 15, {"labels": ["shelf_stocked", "shelf_empty"], "required_metadata": ["temp_c", "humidity_pct"], "sensors": ["camera", "dht"]}),
+    ("retail", ["retail"], "SKU photos with RFID ground truth for product recognition",
+     "Close-up product photos where the item's RFID tag provides the ground-truth SKU. Vary the angle and lighting; one product per frame.",
+     "retail", 1000, 0.0004, 340, 20, {"labels": ["product"], "required_metadata": ["rfid"], "sensors": ["camera", "rfid"]}),
+    ("north", ["fleet"], "5-second clips of a workstation with IR presence",
+     "Short video clips of a desk or conveyor with the IR presence reading signed in. Hands and objects are fine; no identifiable faces.",
+     "presence", 150, 0.0015, 22, 10, {"media_format": "video/webm", "labels": ["occupied", "empty"], "required_metadata": ["ir"], "sensors": ["camera", "ir"]}),
+    ("north", ["garage"], "Recyclable bottles & containers for sorting robots",
+     "Bottles, cans and cartons on a plain surface, one item per frame, with the IR sensor confirming the object. Feeds a recycling-line sorting model.",
+     "recycling", 800, 0.0005, 120, 18, {"labels": ["bottle", "can", "carton"], "required_metadata": ["ir"], "sensors": ["camera", "ir"]}),
+    ("insurer", ["asha"], "Crop-insurance evidence: plant condition with climate readings",
+     "Plant photos signed together with the temperature and humidity at capture time, for parametric crop-insurance claims. Unsigned or edited images are rejected.",
+     "agriculture", 300, 0.0008, 45, 14, {"labels": ["healthy", "wilting", "pest_damage"], "required_metadata": ["temp_c", "humidity_pct"], "sensors": ["camera", "dht"], "min_quality": 60}),
+]
+
+
+def seed_demand(db, users: dict) -> None:
+    base = {"media_format": "image/jpeg", "min_resolution": "320x240", "require_device_signature": True, "min_quality": 50}
+    for buyer, contribs, title, desc, cat, qty, price, accepted, days, extra in DEMO_REQUESTS:
+        mk_request(db, users[buyer], [users[c] for c in contribs], title, desc, cat, qty, eth(price), accepted, days, {**base, **extra})
+
+
+def refresh_demand() -> None:
+    """Replace the old seeded demo requests in an existing DB with DEMO_REQUESTS.
+
+    Only touches requests that are demo (is_demo, off-chain, no chain id) and only their seed
+    placeholder submissions (no sample attached) and demo-ledger entries. Real samples,
+    devices, datasets, on-chain requests and payments are never touched."""
+    from sqlalchemy import and_
+    from .db import SessionLocal, Submission, Tx, init_db
+    from .routers.core import DEMO_PERSONAS
+    init_db()
+    db = SessionLocal()
+    old = db.query(DataRequest).filter(and_(DataRequest.is_demo == True, DataRequest.mode == "local",  # noqa: E712
+                                            DataRequest.chain_request_id.is_(None))).all()
+    keep = []
+    for r in old:
+        if db.query(Submission).filter(Submission.request_id == r.id, Submission.sample_id.isnot(None)).count():
+            keep.append(r.id)  # a real sample was submitted: leave this request alone
+            continue
+        db.query(Submission).filter(Submission.request_id == r.id).delete()
+        db.query(Tx).filter(Tx.ref == f"request:{r.id}", Tx.mode == "local").delete()
+        db.delete(r)
+    db.flush()
+    by_addr = {u.address: u for u in db.query(User).all()}
+    addr = {"north": DEMO_PERSONAS["buyer"]["address"], "asha": DEMO_PERSONAS["contributor"]["address"],
+            "garage": "0x9a7a000000000000000000000000000000000c01", "retail": "0x9a7a000000000000000000000000000000000c02",
+            "fleet": "0x9a7a000000000000000000000000000000000c03", "insurer": "0x9a7a000000000000000000000000000000000b02"}
+    users = {k: by_addr.get(v.lower()) for k, v in addr.items()}
+    missing = [k for k, u in users.items() if u is None]
+    if missing:
+        db.rollback()
+        raise SystemExit(f"demo users missing ({missing}); run the seed first")
+    seed_demand(db, users)
+    db.commit()
+    print(f"replaced {len(old) - len(keep)} old demo requests (kept {keep}); now {db.query(DataRequest).count()} requests")
     db.close()
 
 

@@ -163,6 +163,8 @@ def _check(db: Session, r: DataRequest, s: Sample, user: User) -> list[str]:
             reasons += s.quality.get("rejection_reasons", ["rejected by quality checks"])
         if s.quality.get("quality_score", 0) < float(spec.get("min_quality", 0)):
             reasons.append(f"quality {s.quality.get('quality_score')} below required {spec.get('min_quality')}")
+    if str(spec.get("media_format", "")).startswith("video/") and not (s.media_type or "").startswith("video/"):
+        reasons.append("this request needs a video clip (use Record video)")
     labels = spec.get("labels") or []
     if labels and s.label not in labels:
         reasons.append(f"label must be one of {labels}")

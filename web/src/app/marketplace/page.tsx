@@ -5,7 +5,7 @@ import { DatasetCard } from "@/components/domain";
 import { Empty, Field, PageHeader, Skeleton, useApi } from "@/components/ui";
 import { toGwei } from "@/lib/format";
 
-const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "rfid-tagged"];
+const CATS = ["agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving", "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "rfid-tagged", "logistics", "cold-chain", "recycling", "presence"];
 const SENSORS = ["camera", "rfid", "ir", "temp_c", "humidity_pct", "ir-grid"];
 
 export default function Marketplace() {

@@ -26,7 +26,7 @@ from .config import AI_API_KEY, AI_BASE_URL, AI_MODEL
 CATEGORIES = [
     "agriculture", "crop-disease", "pest-damage", "insurance", "vehicle-damage", "autonomous-driving",
     "night", "weather", "retail", "warehouse", "inventory", "occupancy", "ir-sensing", "ultrasonic",
-    "rfid-tagged", "industrial", "infrastructure",
+    "rfid-tagged", "industrial", "infrastructure", "logistics", "cold-chain", "recycling", "presence",
 ]
 KEYWORDS = {
     "agriculture": ["leaf", "crop", "farm", "plant", "mango", "field"],

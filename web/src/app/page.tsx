@@ -47,8 +47,12 @@ export default function DemandBoard() {
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight">What AI teams need captured right now</h1>
           <p className="mt-2 text-sm text-muted">
-            Buyers fund requests into escrow. Contributors capture with registered devices, pass provenance, quality and privacy checks, and get paid per accepted sample.
+            AI teams post what they need captured: photos or short clips with RFID, IR and temperature/humidity readings signed in. Contributors capture with an Argus rig, pass provenance, quality and privacy checks, and get paid per accepted sample.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
+            <Badge tone="chain" dot>On-chain · Sepolia</Badge> ETH locked in the Veridata.sol escrow; the buyer releases payouts per accepted sample, unused funds are refundable.
+            <Badge>Demo ledger</Badge> walkthrough requests on the off-chain demo ledger.
+          </div>
         </div>
         <div className="flex gap-2">
           <Button href="/requests?new=1" variant="primary">
@@ -64,7 +68,7 @@ export default function DemandBoard() {
         ) : (
           <>
             <Stat label="Contributor earnings" value={eth(s.contributor_earnings, 2)} icon={<Coins className="h-4 w-4" />} sub="payouts + sales" />
-            <Stat label="Escrow locked" value={eth(s.escrow_locked, 2)} icon={<Lock className="h-4 w-4" />} sub={`${s.open_requests} open requests`} />
+            <Stat label="Escrow locked" value={eth(s.escrow_locked, 2)} icon={<Lock className="h-4 w-4" />} sub={`${eth(s.escrow_onchain ?? 0, 3)} on Sepolia · ${s.onchain_requests ?? 0} of ${s.open_requests} requests`} />
             <Stat label="Verified datasets" value={num(s.verified_datasets)} icon={<Database className="h-4 w-4" />} />
             <Stat label="Signed samples" value={num(s.verified_samples)} icon={<BadgeCheck className="h-4 w-4" />} />
             <Stat label="Active devices" value={num(s.active_devices)} icon={<Cpu className="h-4 w-4" />} />
@@ -134,7 +138,7 @@ export default function DemandBoard() {
           {reqs.loading && !reqs.data ? (
             <div className="grid gap-3 md:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[190px]" />)}</div>
           ) : reqs.error ? (
-            <Empty title="Can't reach the Veridata API" sub={`${reqs.error}. Start the backend on :8000.`} />
+            <Empty title="Can't reach the Argus API" sub={`${reqs.error}. Start the backend on :8000.`} />
           ) : list.length === 0 ? (
             <Empty title="No open requests" sub="Be the first buyer to post a funded request." action={<Button href="/requests?new=1">Post a request</Button>} />
           ) : (
