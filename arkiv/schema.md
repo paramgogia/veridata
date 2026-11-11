@@ -5,7 +5,11 @@
 **RPC Endpoint:** `https://rpc.rabdi.db-chain.testnet.arkiv.network`  
 **Writing Wallet Address:** `0x399A27F3841D6B82813589B7b5E731737eBdb091`  
 
-All entities are organized under the `veridata.*` schema namespace. Every entity is wallet-owned via Arkiv's native `$owner` attribute and bound to an explicit `$expiresAt` block timestamp.
+All entities are organized under the `veridata.*` schema namespace and carry an explicit `$expiresAt`.
+
+> **Ownership today:** every entity is created by the platform writing wallet above, so that wallet is the Arkiv `$owner`. The user's wallet is recorded in an attribute (`buyer_wallet`, `owner_wallet`, `contributor_wallet`, `wallet`) and is what queries filter on. Moving to user-owned entities (each user's wallet creates and patches its own) is planned.
+>
+> **Written by the app today:** `contributor`, `device`, `request`, `dataset`, `sample`. The `submission` and `audit_event` schemas are defined but not yet written. Entities are created once; status fields (`accepted`, `remaining_escrow`, `status`) are not yet patched after creation.
 
 ---
 
@@ -17,7 +21,7 @@ The primary marketplace listing for training data requests funded in escrow. Use
 | Attribute | Arkiv Type | Indexed | Description |
 |---|---|---|---|
 | `request_id` | `dec()` | ✅ | Internal numeric identifier |
-| `buyer_wallet` | `addr()` | ✅ | Buyer's wallet (matches `$owner`) |
+| `buyer_wallet` | `addr()` | ✅ | Buyer's wallet (recorded as an attribute; `$owner` is currently the platform wallet) |
 | `title` | `str()` | ❌ | Human-readable request title |
 | `category` | `str()` | ✅ | Category (e.g. `agriculture`, `weather`, `traffic`, `retail`) |
 | `quantity` | `dec()` | ✅ | Total samples required |
@@ -35,7 +39,7 @@ The primary marketplace listing for training data requests funded in escrow. Use
 | `mode` | `str()` | ✅ | Settlement mode: `onchain`, `local`, `demo-seed` |
 | `created_at` | `dec()` | ✅ | Creation timestamp (Unix seconds) |
 
-* **Ownership:** Owned by the funding buyer's wallet (`buyer_wallet`).
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
 * **Expiration (TTL):** `ExpirationTime.atDate(deadline)` — automatically pruned from queries the instant the bounty deadline is reached.
 
 ---
@@ -46,7 +50,7 @@ Curated, verified multi-sample dataset packages available for model training lic
 | Attribute | Arkiv Type | Indexed | Description |
 |---|---|---|---|
 | `dataset_id` | `dec()` | ✅ | Internal dataset identifier |
-| `owner_wallet` | `addr()` | ✅ | Publisher's wallet (matches `$owner`) |
+| `owner_wallet` | `addr()` | ✅ | Publisher's wallet (recorded as an attribute; `$owner` is currently the platform wallet) |
 | `title` | `str()` | ❌ | Dataset title |
 | `categories` | `str()` | ✅ | Comma-separated categories |
 | `sensor_types` | `str()` | ✅ | Comma-separated sensor modalities |
@@ -61,8 +65,8 @@ Curated, verified multi-sample dataset packages available for model training lic
 | `status` | `str()` | ✅ | Listing status: `listed`, `delisted` |
 | `created_at` | `dec()` | ✅ | Publication timestamp (Unix seconds) |
 
-* **Ownership:** Publisher's wallet (`owner_wallet`).
-* **Expiration:** `ExpirationTime.fromDays(3650)` (10-year permanent listing).
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
+* **Expiration:** `ExpirationTime.max()` (the longest expiration the SDK allows).
 
 ---
 
@@ -72,7 +76,7 @@ Hardware attestation record for ESP32 and edge sensor rigs equipped with cryptog
 | Attribute | Arkiv Type | Indexed | Description |
 |---|---|---|---|
 | `device_id` | `str()` | ✅ | Hex-encoded bytes32 device identifier |
-| `owner_wallet` | `addr()` | ✅ | Device owner address (matches `$owner`) |
+| `owner_wallet` | `addr()` | ✅ | Device owner address (recorded as an attribute; `$owner` is currently the platform wallet) |
 | `name` | `str()` | ❌ | Human-readable rig name |
 | `kind` | `str()` | ✅ | Hardware type: `esp32-cam`, `simulated` |
 | `pubkey_hex` | `str()` | ❌ | P-256 SEC1 uncompressed public key (`04||X||Y`) |
@@ -82,8 +86,8 @@ Hardware attestation record for ESP32 and edge sensor rigs equipped with cryptog
 | `status` | `str()` | ✅ | Status: `registered`, `revoked` |
 | `created_at` | `dec()` | ✅ | Registration timestamp |
 
-* **Ownership:** Device operator's wallet (`owner_wallet`).
-* **Expiration:** `ExpirationTime.fromDays(3650)` (revocable on-demand via `status = "revoked"`).
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
+* **Expiration:** `ExpirationTime.max()` (the longest expiration the SDK allows).
 
 ---
 
@@ -93,7 +97,7 @@ Cryptographic provenance record for an individual data capture.
 | Attribute | Arkiv Type | Indexed | Description |
 |---|---|---|---|
 | `sample_id` | `str()` | ✅ | Unique sample UUID |
-| `contributor_wallet`| `addr()`| ✅ | Contributor wallet address (matches `$owner`) |
+| `contributor_wallet`| `addr()`| ✅ | Contributor wallet address (recorded as an attribute; `$owner` is currently the platform wallet) |
 | `device_id` | `str()` | ✅ | Capture device identifier |
 | `media_sha256` | `str()` | ❌ | SHA-256 hash of original media file |
 | `manifest_hash` | `str()` | ✅ | SHA-256 hash of canonical signed JSON manifest |
@@ -108,8 +112,8 @@ Cryptographic provenance record for an individual data capture.
 | `captured_at` | `dec()` | ✅ | Physical hardware capture timestamp |
 | `dataset_id` | `dec()` | ✅ | Aggregating dataset ID (0 if unbundled) |
 
-* **Ownership:** Contributor's wallet (`contributor_wallet`).
-* **Expiration:** `ExpirationTime.fromDays(3650)` (immutable provenance archive).
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
+* **Expiration:** `ExpirationTime.max()` (the longest expiration the SDK allows).
 
 ---
 
@@ -118,7 +122,7 @@ Public contributor profile and attestation record.
 
 | Attribute | Arkiv Type | Indexed | Description |
 |---|---|---|---|
-| `wallet` | `addr()` | ✅ | Contributor wallet address (matches `$owner`) |
+| `wallet` | `addr()` | ✅ | Contributor wallet address (recorded as an attribute; `$owner` is currently the platform wallet) |
 | `name` | `str()` | ❌ | Public display name |
 | `bio` | `str()` | ❌ | Public biography |
 | `roles` | `str()` | ✅ | Active roles: `contributor`, `buyer`, `both` |
@@ -126,8 +130,8 @@ Public contributor profile and attestation record.
 | `sample_count` | `dec()` | ✅ | Total validated captures submitted |
 | `created_at` | `dec()` | ✅ | Profile creation timestamp |
 
-* **Ownership:** Contributor's wallet.
-* **Expiration:** `ExpirationTime.fromDays(3650)`.
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
+* **Expiration:** `ExpirationTime.max()` (the longest expiration the SDK allows).
 
 ---
 
@@ -145,7 +149,7 @@ Agent coordination state for sample submissions against open data bounties.
 | `mode` | `str()` | ✅ | Settlement mode: `onchain`, `local` |
 | `created_at` | `dec()` | ✅ | Submission timestamp |
 
-* **Ownership:** Contributor's wallet.
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
 * **Expiration:** Co-terminus with the parent request's deadline (`ExpirationTime.atDate(request_deadline)`).
 
 ---
@@ -161,8 +165,8 @@ Append-only log of security-critical platform events.
 | `mode` | `str()` | ✅ | Settlement context |
 | `created_at` | `dec()` | ✅ | Timestamp |
 
-* **Ownership:** Platform signing wallet.
-* **Expiration:** `ExpirationTime.fromDays(90)` (90-day rolling audit window).
+* **Ownership:** created by the platform wallet (`$owner`); the user's wallet is stored in the attribute above.
+* **Expiration:** `ExpirationTime.fromDays(90)` (90-day rolling audit window). Not yet written by the app.
 
 ---
 

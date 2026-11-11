@@ -1,10 +1,12 @@
-# Veridata hardware: current state (as of this chat)
+# Hardware bring-up notes (NodeMCU + ESP32-CAM)
+
+> Working notes from the first hardware bring-up, kept for reference. The current, maintained setup guide is [firmware/setup_v2/README.md](../firmware/setup_v2/README.md).
 
 ## Boards
 - Main board: NodeMCU ESP8266 (ESP-12E), Windows laptop, Arduino IDE 2.x, port COM8
   - Board setting: NodeMCU 1.0 (ESP-12E Module), esp8266 core 3.1.2, Serial Monitor 115200
   - This is NOT an ESP32 DevKit. The older plan (firmware/veridata_main with mbedtls P-256 /sign, /pubkey) assumed an ESP32; it needs adapting for ESP8266 (lighter ECDSA library, or sign on the backend in dev mode).
-- Camera: ESP32-CAM (AI-Thinker). Flashed once with the stock CameraWebServer example (esp32 core 2.0.17), using the NodeMCU as a USB-serial adapter (NodeMCU RST->GND, RX->U0R, TX->U0T, CAM IO0->GND during upload; all removed afterwards). It runs standalone over WiFi (2.4 GHz). Endpoints: http://<cam-ip>/capture and http://<cam-ip>:81/stream. The CAM IP was not recorded in this chat.
+- Camera: ESP32-CAM (AI-Thinker). Flashed once with the stock CameraWebServer example (esp32 core 2.0.17), using the NodeMCU as a USB-serial adapter (NodeMCU RST->GND, RX->U0R, TX->U0T, CAM IO0->GND during upload; all removed afterwards). It runs standalone over WiFi (2.4 GHz). Endpoints: http://<cam-ip>/capture and http://<cam-ip>:81/stream. Note the CAM IP from the serial monitor or your router.
 - No servo, no keypad, no ultrasonic (yet), no resistors, no capacitors available.
 
 ## Power

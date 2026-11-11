@@ -4,6 +4,10 @@
  * Seeds initial demo requests, datasets, devices, and contributor profiles
  * onto the Arkiv Rabdi DB-chain testnet.
  *
+ * Every record here is DEMO data: mode/registration_mode are "demo-seed" and the
+ * transaction-hash fields are empty, because none of these were settled on any chain.
+ * Never put made-up transaction hashes in public entities.
+ *
  * Usage:
  *   node seed_demo.mjs
  */
@@ -56,10 +60,10 @@ const DEMO_REQUESTS = [
     require_device_sig: "true",
     min_quality: dec("85"),
     sensors: "camera,ultrasonic,ir",
-    spec_hash: "0x7a8b9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",
+    spec_hash: "",
     chain_request_id: dec("1"),
-    fund_tx: "0x4b7f8e9a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e",
-    mode: "onchain",
+    fund_tx: "",
+    mode: "demo-seed",
     created_at: dec(String(Math.floor(Date.now() / 1000) - 86400 * 2)),
     days_duration: 14,
   },
@@ -77,10 +81,10 @@ const DEMO_REQUESTS = [
     require_device_sig: "true",
     min_quality: dec("80"),
     sensors: "camera,dht temp/humidity",
-    spec_hash: "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+    spec_hash: "",
     chain_request_id: dec("2"),
-    fund_tx: "0x3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b",
-    mode: "onchain",
+    fund_tx: "",
+    mode: "demo-seed",
     created_at: dec(String(Math.floor(Date.now() / 1000) - 86400 * 3)),
     days_duration: 30,
   },
@@ -98,10 +102,10 @@ const DEMO_REQUESTS = [
     require_device_sig: "true",
     min_quality: dec("90"),
     sensors: "camera,rc522 rfid",
-    spec_hash: "0x2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+    spec_hash: "",
     chain_request_id: dec("3"),
-    fund_tx: "0x5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    mode: "onchain",
+    fund_tx: "",
+    mode: "demo-seed",
     created_at: dec(String(Math.floor(Date.now() / 1000) - 86400)),
     days_duration: 7,
   },
@@ -120,8 +124,8 @@ const DEMO_DATASETS = [
     price: dec("15000000"), // 0.015 ETH
     content_root: "0x9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e",
     chain_dataset_id: dec("1"),
-    publish_tx: "0x1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e",
-    mode: "onchain",
+    publish_tx: "",
+    mode: "demo-seed",
     status: "listed",
     created_at: dec(String(Math.floor(Date.now() / 1000) - 86400 * 5)),
   },
@@ -137,8 +141,8 @@ const DEMO_DATASETS = [
     price: dec("20000000"),
     content_root: "0x8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d",
     chain_dataset_id: dec("2"),
-    publish_tx: "0x2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d",
-    mode: "onchain",
+    publish_tx: "",
+    mode: "demo-seed",
     status: "listed",
     created_at: dec(String(Math.floor(Date.now() / 1000) - 86400 * 4)),
   },
@@ -152,8 +156,8 @@ const DEMO_DEVICES = [
     kind: "esp32-cam",
     pubkey_hex: "04a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
     signing_mode: "device-hardware",
-    registration_tx: "0x3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e",
-    registration_mode: "onchain",
+    registration_tx: "",
+    registration_mode: "demo-seed",
     status: "registered",
     created_at: dec(String(Math.floor(Date.now() / 1000) - 86400 * 10)),
   },

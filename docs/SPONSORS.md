@@ -10,7 +10,7 @@ Source: https://ethglobal.com/events/mumbai/prizes (fetched during development).
 | **Whitechain** | Chain 1874, USDT (EIP-3009) | Gasless USDT license checkout (Scale track) | Medium | High | **Implemented**: `VeridataPay.sol` [verified](https://explorer.testnet.whitechain.io/address/0x997E7f5B2e1Ea27290a5705F39F1A2e468483FBC), relayer with drain protection, [USDT payment](https://explorer.testnet.whitechain.io/tx/0x7937bd2f27313d571f64542c25c714e5d82b5103802a7cc54091a4173320d066). See README and `WHITECHAIN_FEEDBACK.md` |
 | Hedera | x402 on Hedera, HCS | x402 settlement + HCS audit log | Medium | Medium | Not implemented |
 | World ID | Proof of personhood | Sybil-resistant contributor onboarding | Medium | Medium | Not implemented |
-| **Arkiv** | DB-chain | Decentralized relational database for marketplace discovery, SQL filtering, and native TTL expiration | Medium | High | **Implemented**: 7 schemas on Rabdi testnet, frontend queries via `@arkiv-network/sdk`, see `/arkiv` docs |
+| **Arkiv** | DB-chain | Decentralized relational database for marketplace discovery, SQL filtering, and native TTL expiration | Medium | High | **Implemented**: 7 schemas defined (contributor, device, request, dataset and sample are written by the app; entities are created by the platform wallet), frontend queries via `@arkiv-network/sdk`, see `/arkiv` docs |
 | ENS | Naming | Human-readable contributor and device names | Low | Low | Not implemented |
 | Chainlink CRE | Workflows | Oracle-style verification workflow | Medium | Low | Not implemented |
 | Arc | Circle L1 | Stablecoin escrow | Medium | Low | Not implemented |

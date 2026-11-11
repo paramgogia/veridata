@@ -1,6 +1,6 @@
 # Implementation checklist
 
-- [x] Single Remix-deployable contract: device registry, dataset publish + upload fee, licenses, request escrow, buyer-released payouts, refunds, global duplicate-claim guard; no platform private key
+- [x] Single Remix-deployable contract: device registry, dataset publish + upload fee, licenses, request escrow, buyer-released payouts, refunds, global duplicate-claim guard; no platform key on this contract (every call is a user wallet transaction)
 - [x] Wallet auth (EIP-191 nonce) + demo personas, role flags
 - [x] Device registration (hardware key via `/pubkey`, or a labelled dev-software key), on-chain anchoring
 - [x] Live device dashboard: MJPEG proxy, WebSocket telemetry, ultrasonic, IR, RFID detection + tag association, servo control

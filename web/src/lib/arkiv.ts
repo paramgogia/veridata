@@ -125,14 +125,29 @@ export const AuditSchema = defineSchema("veridata.audit_event", {
 
 // ---- Query helpers ----
 
+// Filter values come from the UI, so never splice them into a query raw: strings are
+// quote-escaped, numbers must be finite, and addresses must be 20-byte hex.
+function qStr(v: string): string {
+  return `str('${String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')`;
+}
+function qDec(v: number): string {
+  if (!Number.isFinite(v)) throw new Error("invalid number in Arkiv filter");
+  return `dec('${v}')`;
+}
+function qAddr(v: string): string {
+  const a = String(v).toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(a)) throw new Error("invalid address in Arkiv filter");
+  return `addr(${a})`;
+}
+
 /** Query open data requests from Arkiv. */
 export async function queryRequests(filters: {
   status?: string;
   category?: string;
 }): Promise<any[]> {
   const parts = ["arkiv.schema = str('veridata.request')"];
-  if (filters.status) parts.push(`status = str('${filters.status}')`);
-  if (filters.category) parts.push(`category = str('${filters.category}')`);
+  if (filters.status) parts.push(`status = ${qStr(filters.status)}`);
+  if (filters.category) parts.push(`category = ${qStr(filters.category)}`);
 
   try {
     const result = await arkivClient.query(parts.join(" AND "), {
@@ -154,14 +169,13 @@ export async function queryDatasets(filters: {
   maxPrice?: number;
   status?: string;
 }): Promise<any[]> {
-  const parts = ["arkiv.schema = str('veridata.dataset')"];
-  if (filters.status) parts.push(`status = str('${filters.status}')`);
-  if (filters.category) parts.push(`categories = str('${filters.category}')`);
-  if (filters.sensor) parts.push(`sensor_types = str('${filters.sensor}')`);
-  if (filters.minQuality) parts.push(`quality_score >= dec('${filters.minQuality}')`);
-  if (filters.maxPrice) parts.push(`price <= dec('${filters.maxPrice}')`);
-
   try {
+    const parts = ["arkiv.schema = str('veridata.dataset')"];
+    if (filters.status) parts.push(`status = ${qStr(filters.status)}`);
+    if (filters.category) parts.push(`categories = ${qStr(filters.category)}`);
+    if (filters.sensor) parts.push(`sensor_types = ${qStr(filters.sensor)}`);
+    if (filters.minQuality) parts.push(`quality_score >= ${qDec(filters.minQuality)}`);
+    if (filters.maxPrice) parts.push(`price <= ${qDec(filters.maxPrice)}`);
     const result = await arkivClient.query(parts.join(" AND "), {
       select: "*",
       limit: 100,
@@ -178,11 +192,10 @@ export async function queryDevices(filters: {
   status?: string;
   owner?: string;
 }): Promise<any[]> {
-  const parts = ["arkiv.schema = str('veridata.device')"];
-  if (filters.status) parts.push(`status = str('${filters.status}')`);
-  if (filters.owner) parts.push(`owner_wallet = addr(${filters.owner.toLowerCase()})`);
-
   try {
+    const parts = ["arkiv.schema = str('veridata.device')"];
+    if (filters.status) parts.push(`status = ${qStr(filters.status)}`);
+    if (filters.owner) parts.push(`owner_wallet = ${qAddr(filters.owner)}`);
     const result = await arkivClient.query(parts.join(" AND "), {
       select: "*",
       limit: 100,
@@ -198,7 +211,7 @@ export async function queryDevices(filters: {
 export async function queryContributor(wallet: string): Promise<any | null> {
   try {
     const result = await arkivClient.query(
-      `arkiv.schema = str('veridata.contributor') AND wallet = addr(${wallet.toLowerCase()})`,
+      `arkiv.schema = str('veridata.contributor') AND wallet = ${qAddr(wallet)}`,
       { select: "*", limit: 1 },
     );
     const entities = result.entities || [];

@@ -1,10 +1,12 @@
-# Veridata
+# Argus (formerly Veridata)
 
 **A decentralized, demand-driven marketplace for verifiable real-world AI training data.**
 
+> The product is called **Argus** in the UI. Code identifiers, schemas (`veridata.*`), contracts (`Veridata.sol`, `VeridataPay.sol`) and env vars keep the original `veridata` name so existing deployments keep working.
+
 Capture → Verify → Monetize → Train → Export.
 
-Buyers post funded requests ("2,000 clips of heavy rain at night on rural roads, 0.0005 ETH per accepted clip") and the reward sits in on-chain escrow. Contributors capture with registered ESP32 rigs (camera, ultrasonic, IR, RFID, servo). Each capture gets a manifest signed by the device's P-256 key. Every sample is verified for integrity, signature, quality and privacy; the buyer then releases the escrowed payout for verified samples from their own wallet. Buyers fine-tune models on licensed data inside a controlled Training Room. They can never download the raw media, but they can export the trained weights.
+Buyers post funded requests ("2,000 clips of heavy rain at night on rural roads, 0.0005 ETH per accepted clip") and the reward sits in on-chain escrow. Contributors capture with registered rigs (an ESP32-CAM plus a sensor board with IR presence, temperature/humidity and RFID). Each capture gets a manifest signed by the device's P-256 key. Every sample is verified for integrity, signature, quality and privacy; the buyer then releases the escrowed payout for verified samples from their own wallet. Buyers fine-tune models on licensed data inside a controlled Training Room. They can never download the raw media, but they can export the trained weights.
 
 | | |
 |---|---|
@@ -13,7 +15,7 @@ Buyers post funded requests ("2,000 clips of heavy rain at night on rural roads,
 | Contract | One self-contained `contracts/Veridata.sol`, deployed from **Remix** to **Ethereum Sepolia** |
 | Crypto | ES256 (P-256) device signatures, sha256 Merkle roots, AES-256-GCM per-file encryption |
 | AI | PyTorch fine-tuning (Veri-CNN-S, ResNet-18); OpenAI-compatible VLM for quality checks (0G Private Computer recommended) |
-| Hardware | ESP32-CAM (stock CameraWebServer) + ESP32 main board running `firmware/veridata_main` |
+| Hardware | ESP32-CAM + NodeMCU sensor board (`firmware/setup_v2`, current rig); ESP32 DevKit with on-device signing (`firmware/veridata_main`, not yet validated on hardware) |
 
 ---
 
@@ -60,7 +62,7 @@ Seed data never touches 0G (labelled `demo-seed`); only live captures do.
 
 ## Arkiv Integration (Decentralized DB-Chain on Rabdi Testnet)
 
-VeriData replaces centralized relational databases (PostgreSQL/SQLite) for public marketplace data with **Arkiv DB-Chain**. Every buyer request, published dataset, capture device, and signed sample manifest is indexed on Arkiv and queryable via SQL-like filters.
+Public marketplace data is mirrored to **Arkiv DB-Chain** so anyone can query it without our API. Buyer requests, published datasets, capture devices, samples, submissions and contributor profiles are written to Arkiv as typed entities and queried from the browser with SQL-like filters. The backend database (SQLite/Postgres) remains the source of truth; Arkiv is a public index written in the background. Entities are currently created by the platform wallet below (so it is the Arkiv `$owner`), and status fields are written once and not yet patched; see [docs/SECURITY.md](docs/SECURITY.md#known-limitations).
 
 * **Network:** Arkiv Testnet (Rabdi) · Chain ID `7794095`
 * **Public RPC:** `https://rpc.rabdi.db-chain.testnet.arkiv.network`
@@ -84,7 +86,7 @@ arkiv.schema = str('veridata.dataset') AND status = str('listed') AND sensor_typ
 * **Developer Friction:** [/arkiv/friction.md](arkiv/friction.md) — Honest feedback on building with `@arkiv-network/sdk` and testnet infrastructure.
 * **Reach & Market:** [/arkiv/reach.md](arkiv/reach.md) — Target audiences, live testnet deployment, and post-hackathon roadmap.
 * **Why Arkiv:** [/arkiv/why-arkiv.md](arkiv/why-arkiv.md) — What users lose if we used PostgreSQL instead of Arkiv, and what we deliberately kept off-chain.
-* **How We Use Arkiv:** [/arkiv/how-you-use-arkiv.md](arkiv/how-you-use-arkiv.md) — Mapping UI dropdowns/sliders to indexed fields, access control matrix, and user-visible TTL expiration.
+* **How We Use Arkiv:** [/arkiv/how-you-use-arkiv.md](arkiv/how-you-use-arkiv.md) — Mapping UI filters to indexed fields, entity ownership, and TTL expiration.
 
 ### AI Usage Disclosure (ETHGlobal Compliance)
 In accordance with ETHGlobal hackathon rules: Claude Opus and Gemini 3.8 Flash were utilized as agentic pair-programming assistants to scaffold schema definitions, write integration glue code between FastAPI and Arkiv's TypeScript SDK, and document architectural friction points.
@@ -98,7 +100,7 @@ In accordance with ETHGlobal hackathon rules: Claude Opus and Gemini 3.8 Flash w
    - `_treasury`: the address that receives platform fees (`0x0000000000000000000000000000000000000000` = the deployer).
    - `_uploadFee`: `100000000000000` (0.0001 ETH, in wei).
    - `_feeBps`: `500` (5%).
-3. Copy `.env.example` to `.env` at the repo root and set `VERIDATA_CONTRACT_ADDRESS` (and `CHAIN_RPC_URL` if you use your own RPC). **No private key is needed anywhere**: every transaction is signed in a user's wallet.
+3. Copy `.env.example` to `.env` at the repo root and set `VERIDATA_CONTRACT_ADDRESS` (and `CHAIN_RPC_URL` if you use your own RPC). Every Sepolia transaction below is signed in the user's own wallet; the backend needs no key for this contract. (The backend does use one operational key for 0G uploads, Arkiv writes and the Whitechain gas relayer; see [docs/SECURITY.md](docs/SECURITY.md#keys-and-trusted-roles).)
 4. Restart the backend. The header pill turns blue (**Sepolia**). Sign in with **Connect wallet**, then choose **Settle via → Sepolia (wallet)** for device registration, dataset publishing, purchases, request escrow and refunds.
 
 What settles on-chain:
@@ -118,9 +120,9 @@ The backend verifies each user transaction's receipt and decoded event, checking
 
 **Why this needs on-chain stablecoins:** an AI training agent has to buy a dataset license per request, by itself, at 2 a.m., with no merchant account, card or invoice. A signed USDT authorization settles in seconds, and the license is enforced by the contract, not by our database.
 
-**Flow (zero crypto steps for the payer):**
+**Flow (the payer needs no gas and no WBT):**
 1. The agent (or the website) calls `GET /api/x402/datasets/{id}/license` and gets **HTTP 402** with the price in USDT and an EIP-3009 nonce.
-2. The payer signs one `ReceiveWithAuthorization` (an EIP-712 message: no gas, no WBT, no approve).
+2. The payer signs one `ReceiveWithAuthorization` (an EIP-712 message: no gas, no WBT, no approve). An agent signs in code; in the browser this is one wallet signature on Whitechain Sepolia.
 3. It retries with `X-PAYMENT`. Our **relayer** (`backend/app/chain/whitechain.py`) submits `VeridataPay.purchase()` and pays the WBT gas. The contract pulls the USDT and splits seller 95% / treasury 5% **in the same transaction**, records `hasLicense`, and emits `LicensePurchased`.
 4. The payer receives the license and an access token, then pulls the signed capture manifests it paid for.
 
@@ -146,12 +148,15 @@ Feedback on building with Whitechain: [WHITECHAIN_FEEDBACK.md](WHITECHAIN_FEEDBA
 
 ## Hardware
 
-See [docs/HARDWARE.md](docs/HARDWARE.md). In short: flash the stock **CameraWebServer** to the ESP32-CAM and `firmware/veridata_main` to the main ESP32. Then register a *hardware* device with the CAM and board URLs. If the board answers `/pubkey`, manifests are signed **on the ESP32** (`device-hardware`). Otherwise the platform generates a clearly labelled **dev-software** key.
+See [firmware/setup_v2/README.md](firmware/setup_v2/README.md) for the current rig and [docs/HARDWARE.md](docs/HARDWARE.md) for the ESP32 DevKit design.
+
+- **Current rig (`firmware/setup_v2`):** ESP32-CAM + NodeMCU ESP8266 with IR presence, DHT temperature/humidity and an RC522 RFID reader. The NodeMCU does not sign, so captures from this rig use a platform-held **dev-software** key, labelled as such in every manifest.
+- **On-device signing (`firmware/veridata_main`):** an ESP32 DevKit that exposes `/pubkey` and `/sign`. If a registered board answers `/pubkey`, manifests are signed **on the ESP32** (`device-hardware`). This firmware has not yet been validated on physical hardware.
 
 ## Demo script (≈5 min)
 
-1. **Demand Board** (`/`): the highest-value request, escrow totals, trending categories.
-2. **Devices** → the rig → **live stream**, ultrasonic/IR readings, servo slider, and an RFID tag held to the reader (associate it with a SKU).
+1. **Demand Board** (`/demand`): the highest-value request, escrow totals, trending categories.
+2. **Devices** → the rig → **live stream**, IR presence and temperature/humidity readings, and an RFID tag held to the reader (associate it with a SKU).
 3. **Capture & sign** → inspect the signed manifest (sha256, sensors, RFID, ES256 signature) → **Verify sample**.
 4. **/upload?request=3** (retail RFID request): describe → run AI quality & privacy checks → submit → accepted on the demo ledger; for an on-chain request the sample shows **verified**, and the buyer clicks **Release payouts** on the request page.
 5. **Tamper demo** (`/demo/insurance`): 6 claim photos, 3 valid and 3 rejected (no manifest / foreign key / edited). **Modify one pixel** → hash mismatch.
@@ -162,20 +167,37 @@ See [docs/HARDWARE.md](docs/HARDWARE.md). In short: flash the stock **CameraWebS
 ## Repository
 
 ```
-contracts/Veridata.sol        single contract (Remix), ABI alongside
-backend/app/                  FastAPI app: routers/, provenance, quality, training, storage, chain/
+contracts/Veridata.sol        Sepolia: device registry, dataset roots, licences, request escrow
+contracts/VeridataPay.sol     Whitechain: gasless USDT licence checkout (EIP-3009)
+backend/app/                  FastAPI app: routers/, provenance, quality, training, storage, chain/, zerog, arkiv
+backend/arkiv/                Arkiv schemas and the Node.js writer used by the backend
+backend/scripts/              deploy, 0G fine-tuning/health, x402 agent, Arkiv seeding
 web/src/app/                  all routes (see docs/ARCHITECTURE.md)
-firmware/veridata_main/       ESP32 main-board firmware (sensors, servo, RFID, ES256 signing)
-firmware/veridata_nodemcu/    NodeMCU ESP8266 sensor board (IR, DHT, RFID; dev-software signing)
+firmware/setup_v2/            current rig: ESP32-CAM + NodeMCU sensor board (IR, DHT, RFID)
+firmware/veridata_main/       ESP32 DevKit firmware with on-device ES256 signing (not yet validated on hardware)
+firmware/veridata_cam/, firmware/veridata_nodemcu/   earlier sketches, kept for reference
+arkiv/                        Arkiv judging docs (schema, friction, reach, why, how)
 docs/                         architecture, security, hardware, sponsors, checklist
 ```
 
 ## Honest limitations
 
 - **Provenance ≠ authenticity.** Signatures prove that bytes are unchanged and came from a registered key, not that the scene is real. RFID proves a tag was read, not who owns the object.
-- **dev-software** keys are held encrypted by the platform. Only `device-hardware` keys live on the ESP32 (in NVS; enable flash encryption for production). The firmware has not yet been compiled or validated on the physical rig.
+- **dev-software** keys are held encrypted by the platform, so those signatures are only as trustworthy as the platform. The current rig (`firmware/setup_v2`) signs this way. Only `device-hardware` keys live on the device (`firmware/veridata_main`, in NVS; enable flash encryption and secure boot for production), and that firmware has not yet been validated on physical hardware.
+- Captures made with the browser camera or with test sensor readings (when the sensor board is offline) are allowed for demos, and are labelled in the signed manifest (`camera`, `sensor_board`, `test_fields`).
 - The training isolation is a **process plus API boundary**, not a TEE. Exported weights can memorize training data; the UI reports a generalization-gap indicator, not a guarantee.
 - Off-chain checks decide which samples are *verified*, but the **buyer** releases the payout. A buyer could refuse to pay verified samples and reclaim the escrow after the deadline; reputation is the only deterrent in this MVP.
-- Storage is AES-GCM encrypted and content-addressed on local disk, with optional IPFS pinning (`IPFS_API_URL`). No other decentralized storage network is integrated.
-- The contract is **not audited**. Rate limits and replay caches are in-memory.
+- Media is AES-GCM encrypted and content-addressed on local disk; when `WALLET_PRIVATE_KEY` is set, the ciphertext and the signed manifest are also uploaded to **0G Storage** (optional IPFS pinning via `IPFS_API_URL`). If a 0G upload fails, the capture still succeeds locally and the error is recorded.
+- The backend holds one operational hot-wallet key for 0G uploads, Arkiv writes and the Whitechain gas relayer. It cannot move user funds on Sepolia or redirect a buyer's USDT (see [docs/SECURITY.md](docs/SECURITY.md#keys-and-trusted-roles)).
+- Arkiv is a public index, not the source of truth: entities are owned by the platform wallet and their status fields are not yet updated after creation.
+- Without a configured AI endpoint (0G Router, 0G broker or any OpenAI-compatible API), quality checks fall back to a deterministic + keyword heuristic, labelled in the result.
+- The contracts are **not audited**. Rate limits and replay caches are in-memory.
 - Sponsor integrations are documented in [docs/SPONSORS.md](docs/SPONSORS.md), including what we evaluated and did not build.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests and the pull-request checklist, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Please report security issues privately as described in [SECURITY.md](SECURITY.md), not in public issues.
+
+## License
+
+[MIT](LICENSE). Third-party libraries keep their own licences.
