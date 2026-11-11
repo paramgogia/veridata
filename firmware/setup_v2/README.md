@@ -17,7 +17,7 @@ Two independent boards that talk to the laptop over the same Wi-Fi hotspot. No d
 | `veridata_cam_v2/` | ESP32-CAM (AI-Thinker) | **AI Thinker ESP32-CAM** |
 | `veridata_sensors_v2/` | NodeMCU ESP8266 | **NodeMCU 1.0 (ESP-12E Module)** |
 
-Wi-Fi name and password are in `secrets.h` in each folder (gitignored, already filled in for hotspot `param`).
+Wi-Fi name and password go in `secrets.h` in each folder: copy `secrets.example.h` to `secrets.h` and fill it in (`secrets.h` is gitignored).
 The old sketches in `../veridata_cam` and `../veridata_nodemcu` are unchanged.
 
 ---

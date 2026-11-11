@@ -16,3 +16,6 @@ contracts/typechain-types/
 contracts/deployments/localhost.json
 firmware/**/secrets.h
 .DS_Store
+
+# build caches
+*.tsbuildinfo

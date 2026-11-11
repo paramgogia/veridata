@@ -39,8 +39,10 @@ def _ensure_installed() -> None:
         pkg_dir = WRITER.parent
         if not (pkg_dir / "node_modules").exists():
             log.info("arkiv: installing Node.js dependencies…")
+            # shell=True is needed on Windows (npm is npm.cmd), but on POSIX a list plus
+            # shell=True would run plain `npm` with no arguments, so only use it on Windows.
             subprocess.run(["npm", "install"], cwd=str(pkg_dir),
-                           capture_output=True, timeout=120, shell=True)
+                           capture_output=True, timeout=120, shell=(os.name == "nt"))
         _installed = True
 
 

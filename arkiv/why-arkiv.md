@@ -23,9 +23,9 @@ Arkiv's native `$expiresAt` and `ExpirationTime.atDate(deadline)` mathematically
 
 ### C. Cryptographic Wallet Ownership of Listings
 In PostgreSQL, "ownership" is just a string or foreign key (`owner_id = 42`) in a row that any database administrator or compromised API key can silently alter. On Arkiv:
-* Every entity is stamped with an immutable `$owner` wallet address.
-* Only the cryptographic key of the buyer or contributor can patch their entity attributes (e.g. modifying bounty pricing or revoking a hardware rig).
-* Ownership is verifiable on-chain by anyone.
+* Every entity is stamped with an immutable `$owner` wallet address, verifiable by anyone, and only that wallet can patch it.
+* **Today** that owner is the platform writing wallet, and the user's wallet is recorded as an indexed attribute. Even so, nobody (including us) can silently rewrite an entity's history without it showing on-chain.
+* **Planned:** user-owned entities, so only the buyer's or contributor's own key can change their listing (e.g. delisting a dataset or revoking a rig).
 
 ### D. Permissionless, Uncensorable Developer APIs
 AI labs and data aggregators do not need an API key, rate-limit tier, or permission from VeriData to index our training data. They connect directly to Arkiv's JSON-RPC endpoint and run multi-field relational queries against the `veridata.*` schemas.

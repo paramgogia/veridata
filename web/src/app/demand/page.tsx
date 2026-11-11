@@ -42,7 +42,7 @@ export default function DemandBoard() {
             {usingArkiv ? (
               <Badge tone="accent" dot>Decentralized DB: Arkiv Rabdi</Badge>
             ) : (
-              <Badge tone="neutral">Arkiv-enabled</Badge>
+              <Badge tone="neutral">Source: Argus API (Arkiv not reachable)</Badge>
             )}
           </div>
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight">What AI teams need captured right now</h1>

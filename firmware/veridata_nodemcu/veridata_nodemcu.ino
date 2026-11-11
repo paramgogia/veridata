@@ -6,7 +6,7 @@
     - MFRC522 (GithubCommunity)
     - DHT sensor library (Adafruit) + Adafruit Unified Sensor
 
-  Wiring (matches board.md):
+  Wiring (matches docs/HARDWARE_BRINGUP_NOTES.md):
     IR OUT      -> D2 (GPIO4), active-LOW = object, VCC 3V3
     RC522 SDA   -> D8 (GPIO15)   SCK -> D5   MOSI -> D7   MISO -> D6
           RST   -> 3V3 (tied high; firmware does a soft reset)   3.3V only

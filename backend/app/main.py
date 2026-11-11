@@ -18,7 +18,9 @@ app = FastAPI(title="Veridata API", version="0.1.0")
 # and hosted deployments via CORS_ORIGIN_REGEX (default: *.vercel.app, *.up.railway.app, *.onrender.com; empty disables).
 _origins = ["http://localhost:3000", "http://127.0.0.1:3000"] + [o.strip().rstrip("/") for o in config.env("CORS_ORIGINS").split(",") if o.strip()]
 _origin_regex = os.environ.get("CORS_ORIGIN_REGEX", r"https://[a-z0-9-]+\.(vercel\.app|up\.railway\.app|onrender\.com)")
-app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_origin_regex=_origin_regex or None, allow_credentials=True,
+# Auth is a Bearer token in the Authorization header (no cookies), so credentialed CORS is not
+# needed. Keeping it off means another site on an allowed domain can never ride a user's cookies.
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_origin_regex=_origin_regex or None, allow_credentials=False,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["X-PAYMENT-RESPONSE"])
 
 # Simple sliding-window rate limit per IP (in-memory; use a shared store in production).
